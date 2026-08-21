@@ -9,6 +9,29 @@ export default function OrderStatus() {
   const { user } = useAuth();
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+
+  async function handleCancel() {
+    const confirmed = window.confirm(
+      "Are you sure you want to cancel this order?"
+    );
+
+    if (!confirmed) return;
+
+    setCancelling(true);
+    setError("");
+
+    try {
+      const { data } = await client.post(`/orders/${id}/cancel`);
+      setOrder(data.order);
+    } catch (err) {
+      setError(
+        err.response?.data?.error || "Could not cancel this order"
+      );
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   useEffect(() => {
     client
@@ -19,60 +42,102 @@ export default function OrderStatus() {
 
   useEffect(() => {
     if (!user) return;
+
     const socket = getSocket(user);
 
     function handleUpdate(updated) {
       if (updated.id === id) setOrder(updated);
     }
+
     socket.on("order:update", handleUpdate);
+
     return () => socket.off("order:update", handleUpdate);
   }, [id, user]);
 
   if (error) return <div className="page error-text">{error}</div>;
   if (!order) return <div className="page">Loading order...</div>;
 
-  const isActive = order.status === "PENDING" || order.status === "PREPARING";
+  const isActive =
+    order.status === "PENDING" || order.status === "PREPARING";
 
   return (
     <div className="page">
       <h1>Order {order.token}</h1>
-      <span className={`badge ${order.status}`}>{order.status}</span>
+
+      <span className={`badge ${order.status}`}>
+        {order.status}
+      </span>
 
       {isActive && order.queuePosition && (
         <div className="queue-banner" style={{ marginTop: 16 }}>
           <div className="muted">Your position in the queue</div>
           <div className="position">#{order.queuePosition}</div>
-          <div className="muted">Estimated wait: ~{order.estimatedWaitMinutes} min</div>
+          <div className="muted">
+            Estimated wait: ~{order.estimatedWaitMinutes} min
+          </div>
+        </div>
+      )}
+
+      {order.status === "PENDING" && (
+        <div style={{ marginTop: 16 }}>
+          <button
+            onClick={handleCancel}
+            disabled={cancelling}
+            className="button"
+          >
+            {cancelling ? "Cancelling..." : "Cancel Order"}
+          </button>
         </div>
       )}
 
       {order.status === "READY" && (
-        <div className="queue-banner" style={{ background: "#dcefc4", borderColor: "#97c459" }}>
-          <strong>Your order is ready — head to the counter!</strong>
+        <div
+          className="queue-banner"
+          style={{
+            background: "#dcefc4",
+            borderColor: "#97c459",
+          }}
+        >
+          <strong>
+            Your order is ready — head to the counter!
+          </strong>
         </div>
       )}
 
       {order.status === "COLLECTED" && (
-        <div className="card">Order collected. Thanks for using Canteen Queue!</div>
+        <div className="card">
+          Order collected. Thanks for using Canteen Queue!
+        </div>
       )}
 
       <div className="card" style={{ marginTop: 16 }}>
         <h2>Items</h2>
+
         <table>
           <tbody>
             {order.items.map((line, idx) => (
               <tr key={idx}>
                 <td>{line.name}</td>
                 <td>x{line.quantity}</td>
-                <td>₹{(Number(line.unitPrice) * line.quantity).toFixed(2)}</td>
+                <td>
+                  ₹
+                  {(Number(line.unitPrice) * line.quantity).toFixed(2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p style={{ marginTop: 10 }}><strong>Total: ₹{Number(order.totalAmount).toFixed(2)}</strong></p>
+
+        <p style={{ marginTop: 10 }}>
+          <strong>
+            Total: ₹{Number(order.totalAmount).toFixed(2)}
+          </strong>
+        </p>
       </div>
 
-      <Link to="/orders" className="muted">← Back to my orders</Link>
+      <Link to="/orders" className="muted">
+        ← Back to my orders
+      </Link>
     </div>
   );
 }

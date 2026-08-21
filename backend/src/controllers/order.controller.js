@@ -120,4 +120,79 @@ const getOrder = asyncHandler(async (req, res) => {
   res.json({ order: serializeOrder(order, position) });
 });
 
-module.exports = { createOrder, getMyOrders, getOrder, serializeOrder };
+// POST /api/orders/:id/cancel
+// Students can cancel only PENDING orders.
+// Cancelled items are returned to inventory.
+const cancelOrder = asyncHandler(async (req, res) => {
+  const order = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: {
+      items: true,
+    },
+  });
+
+  if (!order) {
+    return res.status(404).json({ error: "Order not found" });
+  }
+
+  // A student can cancel only their own order.
+  if (order.userId !== req.user.id) {
+    return res.status(403).json({ error: "Not your order" });
+  }
+
+  // Once preparation has started, cancellation is no longer allowed.
+  if (order.status !== "PENDING") {
+    return res.status(409).json({
+      error: "Order can only be cancelled while it is pending",
+    });
+  }
+
+  const cancelledOrder = await prisma.$transaction(async (tx) => {
+    // Restore each item's stock.
+    for (const item of order.items) {
+      await tx.menuItem.update({
+        where: { id: item.menuItemId },
+        data: {
+          stockQty: { increment: item.quantity },
+          isAvailable: true,
+        },
+      });
+    }
+
+    // Mark the order as cancelled.
+    return tx.order.update({
+      where: { id: order.id },
+      data: {
+        status: "CANCELLED",
+      },
+      include: {
+        items: {
+          include: {
+            menuItem: true,
+          },
+        },
+      },
+    });
+  });
+
+  const serialized = serializeOrder(cancelledOrder, null);
+
+  // Update the student's page immediately.
+  emitOrderUpdate(req.user.id, serialized);
+
+  // Update all connected admin dashboards immediately.
+  emitAdminOrdersChanged({
+    type: "cancelled",
+    order: serialized,
+  });
+
+  res.json({ order: serialized });
+});
+
+module.exports = {
+  createOrder,
+  getMyOrders,
+  getOrder,
+  cancelOrder,
+  serializeOrder,
+};

@@ -47,4 +47,16 @@ function emitAdminOrdersChanged(payload) {
   getIO().to("admins").emit("admin:orders-changed", payload);
 }
 
-module.exports = { initSockets, getIO, emitOrderUpdate, emitAdminOrdersChanged };
+// Emit menu stock changes to every connected client.
+// This keeps student menu pages synchronized when stock changes.
+function emitMenuStockChanged(items) {
+  getIO().emit("menu:stock-changed", items);
+}
+
+module.exports = {
+  initSockets,
+  getIO,
+  emitOrderUpdate,
+  emitAdminOrdersChanged,
+  emitMenuStockChanged,
+};

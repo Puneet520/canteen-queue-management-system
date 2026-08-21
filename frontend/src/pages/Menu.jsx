@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import client from "../api/client";
+import { getSocket } from "../socket";
+import { useAuth } from "../context/AuthContext";
 
 export default function Menu() {
+  const { user } = useAuth();
+
   const [items, setItems] = useState([]);
   const [cart, setCart] = useState({}); // menuItemId -> quantity
   const [loading, setLoading] = useState(true);
@@ -17,6 +21,22 @@ export default function Menu() {
       .catch(() => setError("Could not load the menu"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const socket = getSocket(user);
+
+    function handleStockChanged(updatedItems) {
+      setItems(updatedItems);
+    }
+
+    socket.on("menu:stock-changed", handleStockChanged);
+
+    return () => {
+      socket.off("menu:stock-changed", handleStockChanged);
+    };
+  }, [user]);
 
   function updateQty(id, delta, maxStock) {
     setCart((c) => {
@@ -34,12 +54,50 @@ export default function Menu() {
   async function placeOrder() {
     setError("");
     setPlacing(true);
+
     try {
-      const payload = { items: cartLines.map(([menuItemId, quantity]) => ({ menuItemId, quantity })) };
+      const payload = {
+        items: cartLines.map(([menuItemId, quantity]) => ({
+          menuItemId,
+          quantity,
+        })),
+      };
+
       const { data } = await client.post("/orders", payload);
+
       navigate(`/orders/${data.order.id}`);
     } catch (err) {
-      setError(err.response?.data?.error || "Could not place order");
+      const message =
+        err.response?.data?.error || "Could not place order";
+
+      setError(message);
+
+      // Refresh menu stock because another user may have
+      // purchased the item while it was in this student's cart.
+      try {
+        const { data } = await client.get("/menu");
+
+        setItems(data.items);
+
+        // Remove items from the cart that are no longer available.
+        setCart((currentCart) => {
+          const nextCart = { ...currentCart };
+
+          for (const [menuItemId, quantity] of Object.entries(currentCart)) {
+            const item = data.items.find((i) => i.id === menuItemId);
+
+            if (!item || !item.isAvailable || item.stockQty === 0) {
+              delete nextCart[menuItemId];
+            } else if (quantity > item.stockQty) {
+              nextCart[menuItemId] = item.stockQty;
+            }
+          }
+
+          return nextCart;
+        });
+      } catch {
+        // Keep the original order error visible if menu refresh fails.
+      }
     } finally {
       setPlacing(false);
     }

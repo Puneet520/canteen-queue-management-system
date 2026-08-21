@@ -1,7 +1,11 @@
 const prisma = require("../config/db");
 const { asyncHandler } = require("../middleware/errorHandler");
 const { getQueuePosition, estimateWaitMinutes, generateToken, ACTIVE_STATUSES } = require("../utils/queue");
-const { emitOrderUpdate, emitAdminOrdersChanged } = require("../sockets");
+const {
+  emitOrderUpdate,
+  emitAdminOrdersChanged,
+  emitMenuStockChanged,
+} = require("../sockets");
 
 function serializeOrder(order, position) {
   return {
@@ -22,10 +26,9 @@ function serializeOrder(order, position) {
 }
 
 // POST /api/orders — place a pre-order (FR-5, FR-6, FR-7)
-// Cart items are decremented from stock atomically, so two students can't
-// both "win" the last plate of something (NFR-5).
+// Stock check and decrement are performed atomically to prevent overselling.
 const createOrder = asyncHandler(async (req, res) => {
-  const { items } = req.body; // [{ menuItemId, quantity }]
+  const { items } = req.body;
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Cart is empty" });
@@ -36,54 +39,122 @@ const createOrder = asyncHandler(async (req, res) => {
     const orderItemsData = [];
 
     for (const line of items) {
-      const menuItem = await tx.menuItem.findUnique({ where: { id: line.menuItemId } });
+      const menuItem = await tx.menuItem.findUnique({
+        where: { id: line.menuItemId },
+      });
 
       if (!menuItem || !menuItem.isAvailable) {
-        throw Object.assign(new Error(`${menuItem?.name || "Item"} is not available`), { status: 409 });
-      }
-      if (menuItem.stockQty < line.quantity) {
-        throw Object.assign(new Error(`Not enough stock for ${menuItem.name}`), { status: 409 });
+        throw Object.assign(
+          new Error(`${menuItem?.name || "Item"} is not available`),
+          { status: 409 }
+        );
       }
 
-      // Atomic decrement — combined with the stockQty check above inside
-      // the same transaction, this prevents overselling under concurrent orders.
-      await tx.menuItem.update({
-        where: { id: menuItem.id },
+      if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
+        throw Object.assign(
+          new Error(`Invalid quantity for ${menuItem.name}`),
+          { status: 400 }
+        );
+      }
+
+      // Check and decrement stock in one database operation.
+      // PostgreSQL will only update the row if enough stock remains.
+      const updatedMenuItem = await tx.menuItem.updateMany({
+        where: {
+          id: menuItem.id,
+          stockQty: {
+            gte: line.quantity,
+          },
+        },
         data: {
-          stockQty: { decrement: line.quantity },
-          isAvailable: menuItem.stockQty - line.quantity > 0,
+          stockQty: {
+            decrement: line.quantity,
+          },
         },
       });
 
+      if (updatedMenuItem.count !== 1) {
+        throw Object.assign(
+          new Error(`Not enough stock for ${menuItem.name}`),
+          { status: 409 }
+        );
+      }
+
+      // Get the remaining stock.
+      const remainingItem = await tx.menuItem.findUnique({
+        where: { id: menuItem.id },
+      });
+
+      // If stock reaches zero, mark the item unavailable.
+      if (remainingItem.stockQty === 0 && remainingItem.isAvailable) {
+        await tx.menuItem.update({
+          where: { id: menuItem.id },
+          data: { isAvailable: false },
+        });
+      }
+
       const unitPrice = menuItem.price;
+
       total += Number(unitPrice) * line.quantity;
-      orderItemsData.push({ menuItemId: menuItem.id, quantity: line.quantity, unitPrice });
+
+      orderItemsData.push({
+        menuItemId: menuItem.id,
+        quantity: line.quantity,
+        unitPrice,
+      });
     }
 
     const sequenceHint = await tx.order.count();
+
     const created = await tx.order.create({
       data: {
         userId: req.user.id,
         token: generateToken(sequenceHint),
         totalAmount: total,
         status: "PENDING",
-        items: { create: orderItemsData },
+        items: {
+          create: orderItemsData,
+        },
       },
-      include: { items: { include: { menuItem: true } } },
+      include: {
+        items: {
+          include: {
+            menuItem: true,
+          },
+        },
+      },
     });
 
     return created;
   });
 
   const position = await getQueuePosition(prisma, order);
+
   const orderWithPosition = await prisma.order.update({
     where: { id: order.id },
     data: { queuePosition: position },
-    include: { items: { include: { menuItem: true } } },
+    include: {
+      items: {
+        include: {
+          menuItem: true,
+        },
+      },
+    },
   });
 
   const serialized = serializeOrder(orderWithPosition, position);
-  emitAdminOrdersChanged({ type: "created", order: serialized });
+
+  emitAdminOrdersChanged({
+    type: "created",
+    order: serialized,
+  });
+
+  // Tell all connected clients that menu stock has changed.
+  const updatedMenuItems = await prisma.menuItem.findMany({
+    orderBy: { name: "asc" },
+  });
+
+  emitMenuStockChanged(updatedMenuItems);
 
   res.status(201).json({ order: serialized });
 });
@@ -185,6 +256,13 @@ const cancelOrder = asyncHandler(async (req, res) => {
     type: "cancelled",
     order: serialized,
   });
+
+  // Tell all connected clients that menu stock has changed.
+  const updatedMenuItems = await prisma.menuItem.findMany({
+    orderBy: { name: "asc" },
+  });
+
+  emitMenuStockChanged(updatedMenuItems);
 
   res.json({ order: serialized });
 });

@@ -53,7 +53,6 @@ export default function Login() {
         <p className="muted" style={{ marginTop: 14 }}>
           No account? <Link to="/register">Register here</Link>
         </p>
-        <p className="muted">Admin demo login: admin@canteen.edu / Admin@123</p>
       </div>
     </div>
   );

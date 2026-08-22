@@ -1,5 +1,6 @@
 const prisma = require("../config/db");
 const { asyncHandler } = require("../middleware/errorHandler");
+const { emitMenuStockChanged } = require("../sockets");
 
 // GET /api/menu — public, only shows items marked available (FR-3, FR-4)
 const listMenu = asyncHandler(async (req, res) => {
@@ -35,12 +36,21 @@ const createMenuItem = asyncHandler(async (req, res) => {
       isAvailable: (stockQty ?? 0) > 0,
     },
   });
+
+  // Get the latest menu so all connected student pages can update.
+  const updatedMenuItems = await prisma.menuItem.findMany({
+    orderBy: { name: "asc" },
+  });
+
+  emitMenuStockChanged(updatedMenuItems);
+
   res.status(201).json({ item });
 });
 
 // PUT /api/menu/:id — admin only (FR-14)
 const updateMenuItem = asyncHandler(async (req, res) => {
   const { id } = req.params;
+
   const { name, description, price, category, stockQty, isAvailable } = req.body;
 
   const item = await prisma.menuItem.update({
@@ -54,13 +64,30 @@ const updateMenuItem = asyncHandler(async (req, res) => {
       ...(isAvailable !== undefined && { isAvailable }),
     },
   });
+
+  // Get the latest menu so all connected student pages can update.
+  const updatedMenuItems = await prisma.menuItem.findMany({
+    orderBy: { name: "asc" },
+  });
+
+  emitMenuStockChanged(updatedMenuItems);
+
   res.json({ item });
 });
 
 // DELETE /api/menu/:id — admin only (FR-14)
 const deleteMenuItem = asyncHandler(async (req, res) => {
   const { id } = req.params;
+
   await prisma.menuItem.delete({ where: { id } });
+
+  // Get the latest menu so all connected student pages can update.
+  const updatedMenuItems = await prisma.menuItem.findMany({
+    orderBy: { name: "asc" },
+  });
+
+  emitMenuStockChanged(updatedMenuItems);
+
   res.status(204).send();
 });
 

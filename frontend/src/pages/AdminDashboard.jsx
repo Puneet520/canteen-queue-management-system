@@ -13,6 +13,7 @@ export default function AdminDashboard() {
   const [menuItems, setMenuItems] = useState([]);
   const [newItem, setNewItem] = useState({ name: "", price: "", category: "General", stockQty: "" });
   const [error, setError] = useState("");
+  const [restockAmounts, setRestockAmounts] = useState({});
 
   function loadOrders() {
     client.get("/admin/orders").then(({ data }) => setOrders(data.orders));
@@ -70,6 +71,33 @@ export default function AdminDashboard() {
   async function toggleAvailability(item) {
     await client.put(`/menu/${item.id}`, { isAvailable: !item.isAvailable });
     loadMenu();
+  }
+
+  async function restockItem(item) {
+    const amount = Number(restockAmounts[item.id]);
+
+    if (!Number.isInteger(amount) || amount <= 0) {
+      setError("Enter a valid restock quantity");
+      return;
+    }
+
+    try {
+      setError("");
+
+      await client.put(`/menu/${item.id}`, {
+        stockQty: item.stockQty + amount,
+        isAvailable: true,
+      });
+
+      setRestockAmounts((current) => ({
+        ...current,
+        [item.id]: "",
+      }));
+
+      loadMenu();
+    } catch (err) {
+      setError(err.response?.data?.error || "Could not restock item");
+    }
   }
 
   async function deleteItem(id) {
@@ -146,11 +174,42 @@ export default function AdminDashboard() {
                 <strong>{item.name}</strong> — ₹{Number(item.price).toFixed(2)} — {item.category}
                 <div className="muted">Stock: {item.stockQty}</div>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn small secondary" onClick={() => toggleAvailability(item)}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  className="input"
+                  style={{ width: 90, marginBottom: 0 }}
+                  type="number"
+                  min="1"
+                  placeholder="Qty"
+                  value={restockAmounts[item.id] || ""}
+                  onChange={(e) =>
+                    setRestockAmounts((current) => ({
+                      ...current,
+                      [item.id]: e.target.value,
+                    }))
+                  }
+                />
+
+                <button
+                  className="btn small"
+                  onClick={() => restockItem(item)}
+                >
+                  Restock
+                </button>
+
+                <button
+                  className="btn small secondary"
+                  onClick={() => toggleAvailability(item)}
+                >
                   {item.isAvailable ? "Mark unavailable" : "Mark available"}
                 </button>
-                <button className="btn small danger" onClick={() => deleteItem(item.id)}>Delete</button>
+
+                <button
+                  className="btn small danger"
+                  onClick={() => deleteItem(item.id)}
+                >
+                  Delete
+                </button>
               </div>
             </div>
           ))}

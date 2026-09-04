@@ -34,29 +34,36 @@ model User {
 }
 
 model MenuItem {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  price       Decimal  @db.Decimal(10, 2)
-  category    String   @default("General")
-  isAvailable Boolean  @default(true)
-  stockQty    Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String      @id @default(uuid())
+  name            String
+  description     String?
+  price           Decimal     @db.Decimal(10, 2)
+  category        String      @default("General")
+  prepTimeMinutes Int         @default(4)
+  station         String      @default("Main")
+  isAvailable     Boolean     @default(true)
+  stockQty        Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   orderItems OrderItem[]
 }
 
 model Order {
-  id            String      @id @default(uuid())
-  token         String      @unique
-  userId        String
-  user          User        @relation(fields: [userId], references: [id])
-  status        OrderStatus @default(PENDING)
-  totalAmount   Decimal     @db.Decimal(10, 2)
-  queuePosition Int?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id               String      @id @default(uuid())
+  token            String      @unique
+  pickupPin        String      @default("0000")
+  userId           String
+  user             User        @relation(fields: [userId], references: [id])
+  status           OrderStatus @default(PENDING)
+  totalAmount      Decimal     @db.Decimal(10, 2)
+  queuePosition    Int?
+  estimatedMinutes Int         @default(5)
+  startedPrepAt    DateTime?
+  readyAt          DateTime?
+  collectedAt      DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   items OrderItem[]
 

@@ -22,17 +22,25 @@ async function main() {
   });
 
   const items = [
-    { name: "Veg Sandwich", price: 40, category: "Snacks", stockQty: 25 },
-    { name: "Masala Dosa", price: 60, category: "South Indian", stockQty: 15 },
-    { name: "Cold Coffee", price: 35, category: "Beverages", stockQty: 30 },
-    { name: "Samosa", price: 15, category: "Snacks", stockQty: 40 },
-    { name: "Veg Thali", price: 90, category: "Meals", stockQty: 20 },
+    { name: "Veg Sandwich", price: 40, category: "Snacks", stockQty: 25, prepTimeMinutes: 4, station: "Snacks" },
+    { name: "Masala Dosa", price: 60, category: "South Indian", stockQty: 15, prepTimeMinutes: 6, station: "Grill / South Indian" },
+    { name: "Cold Coffee", price: 35, category: "Beverages", stockQty: 30, prepTimeMinutes: 2, station: "Beverages" },
+    { name: "Samosa", price: 15, category: "Snacks", stockQty: 40, prepTimeMinutes: 1, station: "Snacks" },
+    { name: "Veg Thali", price: 90, category: "Meals", stockQty: 20, prepTimeMinutes: 3, station: "Meals" },
   ];
 
   for (const item of items) {
     const existing = await prisma.menuItem.findFirst({ where: { name: item.name } });
     if (!existing) {
       await prisma.menuItem.create({ data: { ...item, isAvailable: item.stockQty > 0 } });
+    } else {
+      await prisma.menuItem.update({
+        where: { id: existing.id },
+        data: {
+          prepTimeMinutes: item.prepTimeMinutes,
+          station: item.station,
+        },
+      });
     }
   }
 

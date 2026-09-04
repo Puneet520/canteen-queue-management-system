@@ -120,6 +120,72 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Quick Launchpad to TV Display & Kitchen KDS */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+        <a
+          href="/display"
+          target="_blank"
+          rel="noreferrer"
+          className="btn"
+          style={{ background: "#0284c7", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
+        >
+          📺 Open TV Queue Display (New Tab)
+        </a>
+
+        <a
+          href="/kitchen"
+          className="btn"
+          style={{ background: "#7c3aed", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
+        >
+          👨‍🍳 Open Kitchen KDS View
+        </a>
+      </div>
+
+      {/* Quick Counter Handover by PIN */}
+      <div className="card" style={{ background: "#fdf8f6", borderColor: "#f2dede", marginBottom: 20 }}>
+        <h3 style={{ margin: "0 0 8px", color: "var(--navy)" }}>⚡ Quick Counter Handover (Verify 4-Digit PIN)</h3>
+        <p className="muted" style={{ margin: "0 0 12px", fontSize: "0.88rem" }}>
+          Student arrives at counter? Type their 4-digit PIN below to instantly verify ownership and hand over the meal tray.
+        </p>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const pinInput = e.target.elements.quickPin.value.trim();
+            if (!pinInput) return;
+            setError("");
+
+            // Find matching order among active orders
+            const matched = orders.find((o) => o.pickupPin === pinInput && (o.status === "READY" || o.status === "PREPARING"));
+            if (!matched) {
+              setError(`No active order found matching PIN "${pinInput}". Check if order is ready.`);
+              return;
+            }
+
+            try {
+              await client.post(`/orders/${matched.id}/verify-pin`, { pin: pinInput });
+              e.target.reset();
+              loadOrders();
+              loadSummary();
+            } catch (err) {
+              setError(err.response?.data?.error || "Could not verify PIN");
+            }
+          }}
+          style={{ display: "flex", gap: 10, maxWidth: 420 }}
+        >
+          <input
+            name="quickPin"
+            placeholder="Enter 4-Digit PIN (e.g. 4819)"
+            maxLength={4}
+            className="input"
+            style={{ marginBottom: 0, fontSize: "1.1rem", fontWeight: 700, letterSpacing: "2px", textAlign: "center" }}
+            required
+          />
+          <button className="btn" type="submit" style={{ whiteSpace: "nowrap" }}>
+            Verify & Collect
+          </button>
+        </form>
+      </div>
+
       <div style={{ marginBottom: 16 }}>
         <button className={`btn small ${tab === "orders" ? "" : "secondary"}`} onClick={() => setTab("orders")}>Order Queue</button>{" "}
         <button className={`btn small ${tab === "menu" ? "" : "secondary"}`} onClick={() => setTab("menu")}>Menu Management</button>
@@ -133,6 +199,9 @@ export default function AdminDashboard() {
             <div key={o.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <strong>{o.token}</strong> — {o.customer?.name}
+                <span style={{ marginLeft: 10, fontSize: "0.85rem", background: "#f0f0f0", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>
+                  PIN: {o.pickupPin || "----"}
+                </span>
                 <div className="muted">
                   {o.items.map((i) => `${i.name} x${i.quantity}`).join(", ")}
                 </div>

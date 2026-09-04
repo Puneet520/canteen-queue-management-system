@@ -16,16 +16,24 @@ function initSockets(server, corsOrigin) {
   });
 
   io.on("connection", (socket) => {
-    // Client tells us who they are right after connecting so we can
-    // put them in the right room. In a production build this would be
-    // verified against the JWT instead of trusted blindly.
     socket.on("identify", ({ userId, role }) => {
       if (userId) socket.join(`user:${userId}`);
       if (role === "ADMIN") socket.join("admins");
     });
 
+    // Public TV display screen
+    socket.on("join:display", () => {
+      socket.join("display");
+    });
+
+    // Kitchen KDS screen
+    socket.on("join:kitchen", () => {
+      socket.join("kitchen");
+      socket.join("admins");
+    });
+
     socket.on("disconnect", () => {
-      // no-op for MVP — rooms are cleaned up automatically by socket.io
+      // rooms cleaned up automatically
     });
   });
 
@@ -37,18 +45,23 @@ function getIO() {
   return io;
 }
 
-// Emit to the specific user who owns this order (order status changed).
+// Emit to the specific user who owns this order
 function emitOrderUpdate(userId, order) {
   getIO().to(`user:${userId}`).emit("order:update", order);
 }
 
-// Emit to every connected admin dashboard (new order placed / list changed).
+// Emit to every connected admin dashboard
 function emitAdminOrdersChanged(payload) {
   getIO().to("admins").emit("admin:orders-changed", payload);
+  getIO().to("kitchen").emit("kitchen:orders-changed", payload);
 }
 
-// Emit menu stock changes to every connected client.
-// This keeps student menu pages synchronized when stock changes.
+// Emit to connected public canteen display screens
+function emitDisplayOrdersChanged(payload) {
+  getIO().to("display").emit("display:orders-changed", payload);
+}
+
+// Emit menu stock changes to all connected clients
 function emitMenuStockChanged(items) {
   getIO().emit("menu:stock-changed", items);
 }
@@ -58,5 +71,6 @@ module.exports = {
   getIO,
   emitOrderUpdate,
   emitAdminOrdersChanged,
+  emitDisplayOrdersChanged,
   emitMenuStockChanged,
 };

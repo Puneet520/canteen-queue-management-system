@@ -1,9 +1,16 @@
 const prisma = require("../config/db");
 const { asyncHandler } = require("../middleware/errorHandler");
-const { getQueuePosition, estimateWaitMinutes, generateToken, ACTIVE_STATUSES } = require("../utils/queue");
+const {
+  getQueuePosition,
+  estimateWaitMinutes,
+  generateToken,
+  generatePickupPin,
+  ACTIVE_STATUSES,
+} = require("../utils/queue");
 const {
   emitOrderUpdate,
   emitAdminOrdersChanged,
+  emitDisplayOrdersChanged,
   emitMenuStockChanged,
 } = require("../sockets");
 
@@ -11,17 +18,25 @@ function serializeOrder(order, position) {
   return {
     id: order.id,
     token: order.token,
+    pickupPin: order.pickupPin,
     status: order.status,
     totalAmount: order.totalAmount,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
-    items: order.items.map((i) => ({
-      name: i.menuItem.name,
+    startedPrepAt: order.startedPrepAt,
+    readyAt: order.readyAt,
+    collectedAt: order.collectedAt,
+    items: (order.items || []).map((i) => ({
+      id: i.id,
+      menuItemId: i.menuItemId,
+      name: i.menuItem?.name || "Item",
       quantity: i.quantity,
       unitPrice: i.unitPrice,
+      prepTimeMinutes: i.menuItem?.prepTimeMinutes || 4,
+      station: i.menuItem?.station || "Main",
     })),
     queuePosition: position,
-    estimatedWaitMinutes: estimateWaitMinutes(position),
+    estimatedWaitMinutes: estimateWaitMinutes(position, order.items, order.status),
   };
 }
 
@@ -105,11 +120,13 @@ const createOrder = asyncHandler(async (req, res) => {
     }
 
     const sequenceHint = await tx.order.count();
+    const pin = generatePickupPin();
 
     const created = await tx.order.create({
       data: {
         userId: req.user.id,
         token: generateToken(sequenceHint),
+        pickupPin: pin,
         totalAmount: total,
         status: "PENDING",
         items: {
@@ -129,10 +146,11 @@ const createOrder = asyncHandler(async (req, res) => {
   });
 
   const position = await getQueuePosition(prisma, order);
+  const estimatedMins = estimateWaitMinutes(position, order.items, order.status);
 
   const orderWithPosition = await prisma.order.update({
     where: { id: order.id },
-    data: { queuePosition: position },
+    data: { queuePosition: position, estimatedMinutes: estimatedMins },
     include: {
       items: {
         include: {
@@ -147,6 +165,19 @@ const createOrder = asyncHandler(async (req, res) => {
   emitAdminOrdersChanged({
     type: "created",
     order: serialized,
+  });
+
+  emitDisplayOrdersChanged({
+    type: "created",
+    order: {
+      id: serialized.id,
+      token: serialized.token,
+      status: serialized.status,
+      queuePosition: serialized.queuePosition,
+      estimatedWaitMinutes: serialized.estimatedWaitMinutes,
+      createdAt: serialized.createdAt,
+      updatedAt: serialized.updatedAt,
+    },
   });
 
   // Tell all connected clients that menu stock has changed.
@@ -267,10 +298,101 @@ const cancelOrder = asyncHandler(async (req, res) => {
   res.json({ order: serialized });
 });
 
+// GET /api/orders/display — public endpoint for the canteen TV display screen
+const getDisplayOrders = asyncHandler(async (req, res) => {
+  const activeOrders = await prisma.order.findMany({
+    where: {
+      status: { in: ["PENDING", "PREPARING", "READY"] },
+    },
+    orderBy: { createdAt: "asc" },
+    include: {
+      items: {
+        include: { menuItem: true },
+      },
+    },
+    take: 60,
+  });
+
+  const preparing = [];
+  const ready = [];
+
+  for (const order of activeOrders) {
+    const pos = await getQueuePosition(prisma, order);
+    const eta = estimateWaitMinutes(pos, order.items, order.status);
+    const payload = {
+      id: order.id,
+      token: order.token,
+      status: order.status,
+      queuePosition: pos,
+      estimatedWaitMinutes: eta,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      readyAt: order.readyAt,
+    };
+
+    if (order.status === "READY") {
+      ready.push(payload);
+    } else {
+      preparing.push(payload);
+    }
+  }
+
+  // Sort ready orders newest first so recently called tokens appear at top
+  ready.sort((a, b) => new Date(b.readyAt || b.updatedAt) - new Date(a.readyAt || a.updatedAt));
+
+  res.json({ preparing, ready });
+});
+
+// POST /api/orders/:id/verify-pin — staff verifies 4-digit PIN at pickup counter
+const verifyPickupPin = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { pin } = req.body;
+
+  if (!pin) {
+    return res.status(400).json({ error: "4-digit pickup PIN is required" });
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id },
+    include: { items: { include: { menuItem: true } } },
+  });
+
+  if (!order) {
+    return res.status(404).json({ error: "Order not found" });
+  }
+
+  if (order.status !== "READY" && order.status !== "PREPARING") {
+    return res.status(400).json({ error: `Order is already ${order.status}` });
+  }
+
+  if (order.pickupPin !== pin.trim()) {
+    return res.status(400).json({ error: "Incorrect 4-digit PIN. Please verify with the student." });
+  }
+
+  const collectedOrder = await prisma.order.update({
+    where: { id },
+    data: {
+      status: "COLLECTED",
+      collectedAt: new Date(),
+    },
+    include: { items: { include: { menuItem: true } } },
+  });
+
+  const serialized = serializeOrder(collectedOrder, null);
+
+  emitOrderUpdate(collectedOrder.userId, serialized);
+  emitAdminOrdersChanged({ type: "updated", order: serialized });
+  emitDisplayOrdersChanged({ type: "collected", order: serialized });
+
+  res.json({ success: true, order: serialized });
+});
+
 module.exports = {
   createOrder,
   getMyOrders,
   getOrder,
   cancelOrder,
+  getDisplayOrders,
+  verifyPickupPin,
   serializeOrder,
 };

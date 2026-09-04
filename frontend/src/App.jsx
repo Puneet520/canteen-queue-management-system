@@ -9,6 +9,8 @@ import Menu from "./pages/Menu";
 import MyOrders from "./pages/MyOrders";
 import OrderStatus from "./pages/OrderStatus";
 import AdminDashboard from "./pages/AdminDashboard";
+import KitchenKDS from "./pages/KitchenKDS";
+import CanteenDisplay from "./pages/CanteenDisplay";
 
 function HomeRedirect() {
   const { user, loading } = useAuth();
@@ -21,29 +23,49 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <div className="app-shell">
-          <Navbar />
-          <Routes>
-            <Route path="/" element={<HomeRedirect />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+        <Routes>
+          {/* Public Full-Screen TV Display — No navbar shell for clean kiosk view */}
+          <Route path="/display" element={<CanteenDisplay />} />
 
-            <Route path="/menu" element={<ProtectedRoute><Menu /></ProtectedRoute>} />
-            <Route path="/orders" element={<ProtectedRoute><MyOrders /></ProtectedRoute>} />
-            <Route path="/orders/:id" element={<ProtectedRoute><OrderStatus /></ProtectedRoute>} />
+          {/* Standard Application Routes with Navbar */}
+          <Route
+            path="*"
+            element={
+              <div className="app-shell">
+                <Navbar />
+                <Routes>
+                  <Route path="/" element={<HomeRedirect />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/register" element={<Register />} />
 
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute requireRole="ADMIN">
-                  <AdminDashboard />
-                </ProtectedRoute>
-              }
-            />
+                  <Route path="/menu" element={<ProtectedRoute><Menu /></ProtectedRoute>} />
+                  <Route path="/orders" element={<ProtectedRoute><MyOrders /></ProtectedRoute>} />
+                  <Route path="/orders/:id" element={<ProtectedRoute><OrderStatus /></ProtectedRoute>} />
 
-            <Route path="*" element={<div className="page">Page not found</div>} />
-          </Routes>
-        </div>
+                  <Route
+                    path="/admin"
+                    element={
+                      <ProtectedRoute requireRole="ADMIN">
+                        <AdminDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+
+                  <Route
+                    path="/kitchen"
+                    element={
+                      <ProtectedRoute requireRole="ADMIN">
+                        <KitchenKDS />
+                      </ProtectedRoute>
+                    }
+                  />
+
+                  <Route path="*" element={<div className="page">Page not found</div>} />
+                </Routes>
+              </div>
+            }
+          />
+        </Routes>
       </AuthProvider>
     </BrowserRouter>
   );

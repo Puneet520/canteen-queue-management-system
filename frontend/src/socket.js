@@ -14,21 +14,22 @@ function identifySocket() {
   });
 }
 
-export function getSocket(user) {
-  currentUser = user;
+export function getSocket(user = null) {
+  if (user) {
+    currentUser = user;
+  }
 
   if (!socket) {
     socket = io(SOCKET_URL, {
       autoConnect: true,
     });
 
-    // Make sure identification happens whenever
-    // the Socket.IO connection is established/re-established.
     socket.on("connect", identifySocket);
   }
 
-  // If already connected, identify immediately.
-  identifySocket();
+  if (currentUser) {
+    identifySocket();
+  }
 
   return socket;
 }

@@ -10,6 +10,7 @@ const authRoutes = require("./routes/auth.routes");
 const menuRoutes = require("./routes/menu.routes");
 const orderRoutes = require("./routes/order.routes");
 const adminRoutes = require("./routes/admin.routes");
+const reviewRoutes = require("./routes/review.routes");
 
 const app = express();
 const server = http.createServer(app);
@@ -24,6 +25,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/menu", menuRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/reviews", reviewRoutes);
 
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
 app.use(errorHandler);

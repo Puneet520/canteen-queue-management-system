@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import client from "../api/client";
 import { getSocket } from "../socket";
 import { useAuth } from "../context/AuthContext";
+import VegBadge from "../components/VegBadge";
+import StarRating from "../components/StarRating";
+import ItemDetailModal from "../components/ItemDetailModal";
 
 const CATEGORY_ICONS = {
   Meals: "🍛",
@@ -76,6 +79,8 @@ export default function Menu() {
   const [placing, setPlacing] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [dietFilter, setDietFilter] = useState("All"); // All | Veg | Non-veg | Jain
+  const [selectedItemId, setSelectedItemId] = useState(null);
 
   const navigate = useNavigate();
 
@@ -158,15 +163,21 @@ export default function Menu() {
         selectedCategory === "All" ||
         item.category === selectedCategory;
 
+      const matchesDiet =
+        dietFilter === "All" ||
+        (dietFilter === "Veg" && item.foodType === "VEG") ||
+        (dietFilter === "Non-veg" && item.foodType === "NON_VEG") ||
+        (dietFilter === "Jain" && item.isJain);
+
       const matchesSearch =
         !query ||
         item.name.toLowerCase().includes(query) ||
         (item.description || "").toLowerCase().includes(query) ||
         item.category.toLowerCase().includes(query);
 
-      return matchesCategory && matchesSearch;
+      return matchesCategory && matchesDiet && matchesSearch;
     });
-  }, [items, search, selectedCategory]);
+  }, [items, search, selectedCategory, dietFilter]);
 
   const cartLines = Object.entries(cart)
     .filter(([, quantity]) => quantity > 0)
@@ -186,6 +197,10 @@ export default function Menu() {
       sum + Number(item.price) * quantity,
     0
   );
+
+  // Derive the modal item from live `items` so its stock/rating stay current
+  // while the modal is open (socket updates flow straight through).
+  const modalItem = items.find((i) => i.id === selectedItemId) || null;
 
   async function placeOrder() {
     setError("");
@@ -339,6 +354,24 @@ export default function Menu() {
         ))}
       </div>
 
+      {/* Dietary filter */}
+      <div className="diet-filter">
+        {[
+          { key: "All", label: "All", icon: "✨" },
+          { key: "Veg", label: "Pure Veg", icon: "🟢" },
+          { key: "Non-veg", label: "Non-veg", icon: "🔴" },
+          { key: "Jain", label: "Jain", icon: "🌱" },
+        ].map((d) => (
+          <button
+            key={d.key}
+            className={`diet-pill ${dietFilter === d.key ? "active" : ""}`}
+            onClick={() => setDietFilter(d.key)}
+          >
+            <span>{d.icon}</span> {d.label}
+          </button>
+        ))}
+      </div>
+
       {/* Menu */}
       {filteredItems.length === 0 ? (
         <div className="menu-empty">
@@ -406,6 +439,7 @@ export default function Menu() {
                           item={item}
                           quantity={cart[item.id] || 0}
                           onUpdateQty={updateQty}
+                          onOpen={setSelectedItemId}
                           index={index}
                         />
                       ))}
@@ -441,6 +475,7 @@ export default function Menu() {
                     item={item}
                     quantity={cart[item.id] || 0}
                     onUpdateQty={updateQty}
+                    onOpen={setSelectedItemId}
                     index={index}
                   />
                 ))}
@@ -484,6 +519,17 @@ export default function Menu() {
           </button>
         </div>
       )}
+
+      {/* Item detail modal */}
+      {modalItem && (
+        <ItemDetailModal
+          item={modalItem}
+          quantity={cart[modalItem.id] || 0}
+          onUpdateQty={updateQty}
+          onClose={() => setSelectedItemId(null)}
+          fallbackIcon={getFoodIcon(modalItem)}
+        />
+      )}
     </div>
   );
 }
@@ -492,8 +538,11 @@ function FoodCard({
   item,
   quantity,
   onUpdateQty,
+  onOpen,
   index,
 }) {
+  const [imgError, setImgError] = useState(false);
+
   const unavailable =
     !item.isAvailable || item.stockQty === 0;
 
@@ -508,15 +557,34 @@ function FoodCard({
       style={{
         animationDelay: `${index * 70}ms`,
       }}
+      onClick={() => onOpen(item.id)}
     >
       <div className="food-visual">
-        <span className="food-emoji">
-          {getFoodIcon(item)}
+        {item.imageUrl && !imgError ? (
+          <img
+            className="food-image"
+            src={item.imageUrl}
+            alt={item.name}
+            loading="lazy"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <span className="food-emoji">
+            {getFoodIcon(item)}
+          </span>
+        )}
+
+        <span className="food-veg-badge">
+          <VegBadge type={item.foodType} isJain={item.isJain} size={16} />
         </span>
 
         <span className="food-category-label">
           {item.category}
         </span>
+
+        {item.calories != null && (
+          <span className="food-cal-badge">🔥 {item.calories} kcal</span>
+        )}
 
         {unavailable && (
           <div className="food-unavailable-overlay">
@@ -536,10 +604,24 @@ function FoodCard({
           )}
         </div>
 
+        <div className="food-rating-row">
+          <StarRating value={item.avgRating} count={item.ratingCount} size={14} />
+        </div>
+
         <p className="food-description">
           {item.description ||
             "Freshly prepared and ready to order."}
         </p>
+
+        {item.allergens && item.allergens.length > 0 && (
+          <div className="food-allergens">
+            {item.allergens.slice(0, 3).map((a) => (
+              <span key={a} className="allergen-chip small">
+                {a}
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="food-bottom">
           <div className="food-price">
@@ -547,11 +629,17 @@ function FoodCard({
           </div>
 
           {unavailable ? (
-            <span className="badge CANCELLED">
+            <span
+              className="badge CANCELLED"
+              onClick={(e) => e.stopPropagation()}
+            >
               Out of stock
             </span>
           ) : (
-            <div className="quantity-control">
+            <div
+              className="quantity-control"
+              onClick={(e) => e.stopPropagation()}
+            >
               <button
                 className="quantity-button decrease"
                 onClick={() =>

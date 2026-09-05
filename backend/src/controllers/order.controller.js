@@ -13,8 +13,16 @@ const {
   emitDisplayOrdersChanged,
   emitMenuStockChanged,
 } = require("../sockets");
+const {
+  getAvailableSlots,
+  getTodayDateString,
+  isOrderInCookingWindow,
+  formatSlotLabel,
+  MAX_SLOT_CAPACITY,
+} = require("../utils/slots");
 
-function serializeOrder(order, position) {
+function serializeOrder(order, position, reviewedItemIds) {
+  const inWindow = isOrderInCookingWindow(order.scheduledSlot, order.scheduledDate);
   return {
     id: order.id,
     token: order.token,
@@ -26,6 +34,11 @@ function serializeOrder(order, position) {
     startedPrepAt: order.startedPrepAt,
     readyAt: order.readyAt,
     collectedAt: order.collectedAt,
+    scheduledSlot: order.scheduledSlot || null,
+    scheduledSlotLabel: order.scheduledSlot ? formatSlotLabel(order.scheduledSlot) : null,
+    scheduledDate: order.scheduledDate || null,
+    isScheduled: Boolean(order.scheduledSlot),
+    isInCookingWindow: inWindow,
     items: (order.items || []).map((i) => ({
       id: i.id,
       menuItemId: i.menuItemId,
@@ -34,24 +47,54 @@ function serializeOrder(order, position) {
       unitPrice: i.unitPrice,
       prepTimeMinutes: i.menuItem?.prepTimeMinutes || 4,
       station: i.menuItem?.station || "Main",
+      reviewed: reviewedItemIds ? reviewedItemIds.has(i.menuItemId) : false,
     })),
-    queuePosition: position,
-    estimatedWaitMinutes: estimateWaitMinutes(position, order.items, order.status),
+    queuePosition: inWindow ? position : null,
+    estimatedWaitMinutes: inWindow ? estimateWaitMinutes(position, order.items, order.status) : null,
   };
 }
 
 // POST /api/orders — place a pre-order (FR-5, FR-6, FR-7)
 // Stock check and decrement are performed atomically to prevent overselling.
 const createOrder = asyncHandler(async (req, res) => {
-  const { items } = req.body;
+  const { items, scheduledSlot } = req.body;
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Cart is empty" });
   }
 
+  const todayStr = getTodayDateString();
+  let targetSlot = null;
+  let targetDate = null;
+
+  if (scheduledSlot && typeof scheduledSlot === "string" && scheduledSlot.trim()) {
+    targetSlot = scheduledSlot.trim();
+    targetDate = todayStr;
+  }
+
   const order = await prisma.$transaction(async (tx) => {
     let total = 0;
     const orderItemsData = [];
+
+    // Check slot capacity under transaction lock if scheduling
+    if (targetSlot) {
+      const slotBookedCount = await tx.order.count({
+        where: {
+          scheduledDate: targetDate,
+          scheduledSlot: targetSlot,
+          status: { notIn: ["CANCELLED"] },
+        },
+      });
+
+      if (slotBookedCount >= MAX_SLOT_CAPACITY) {
+        throw Object.assign(
+          new Error(
+            `Break slot "${formatSlotLabel(targetSlot)}" has reached maximum capacity (${MAX_SLOT_CAPACITY} orders). Please choose another slot.`
+          ),
+          { status: 409 }
+        );
+      }
+    }
 
     for (const line of items) {
       const menuItem = await tx.menuItem.findUnique({
@@ -129,6 +172,8 @@ const createOrder = asyncHandler(async (req, res) => {
         pickupPin: pin,
         totalAmount: total,
         status: "PENDING",
+        scheduledSlot: targetSlot,
+        scheduledDate: targetDate,
         items: {
           create: orderItemsData,
         },
@@ -145,8 +190,9 @@ const createOrder = asyncHandler(async (req, res) => {
     return created;
   });
 
-  const position = await getQueuePosition(prisma, order);
-  const estimatedMins = estimateWaitMinutes(position, order.items, order.status);
+  const inWindow = isOrderInCookingWindow(order.scheduledSlot, order.scheduledDate);
+  const position = inWindow ? await getQueuePosition(prisma, order) : null;
+  const estimatedMins = inWindow ? estimateWaitMinutes(position, order.items, order.status) : 0;
 
   const orderWithPosition = await prisma.order.update({
     where: { id: order.id },
@@ -218,8 +264,19 @@ const getOrder = asyncHandler(async (req, res) => {
     return res.status(403).json({ error: "Not your order" });
   }
 
+  // Which of this order's items the current user has already reviewed,
+  // so the "rate your meal" UI can hide the ones that are done.
+  let reviewedItemIds;
+  if (order.status === "COLLECTED") {
+    const myReviews = await prisma.review.findMany({
+      where: { orderId: order.id, userId: req.user.id },
+      select: { menuItemId: true },
+    });
+    reviewedItemIds = new Set(myReviews.map((r) => r.menuItemId));
+  }
+
   const position = await getQueuePosition(prisma, order);
-  res.json({ order: serializeOrder(order, position) });
+  res.json({ order: serializeOrder(order, position, reviewedItemIds) });
 });
 
 // POST /api/orders/:id/cancel
@@ -317,6 +374,11 @@ const getDisplayOrders = asyncHandler(async (req, res) => {
   const ready = [];
 
   for (const order of activeOrders) {
+    // Only display orders that are in the active cooking window
+    if (!isOrderInCookingWindow(order.scheduledSlot, order.scheduledDate)) {
+      continue;
+    }
+
     const pos = await getQueuePosition(prisma, order);
     const eta = estimateWaitMinutes(pos, order.items, order.status);
     const payload = {
@@ -341,6 +403,12 @@ const getDisplayOrders = asyncHandler(async (req, res) => {
   ready.sort((a, b) => new Date(b.readyAt || b.updatedAt) - new Date(a.readyAt || a.updatedAt));
 
   res.json({ preparing, ready });
+});
+
+// GET /api/orders/slots — public endpoint for break slots with remaining capacities
+const getSlots = asyncHandler(async (req, res) => {
+  const data = await getAvailableSlots(prisma);
+  res.json(data);
 });
 
 // POST /api/orders/:id/verify-pin — staff verifies 4-digit PIN at pickup counter
@@ -393,6 +461,7 @@ module.exports = {
   getOrder,
   cancelOrder,
   getDisplayOrders,
+  getSlots,
   verifyPickupPin,
   serializeOrder,
 };

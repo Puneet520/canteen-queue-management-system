@@ -5,14 +5,16 @@ const {
   getOrder,
   cancelOrder,
   getDisplayOrders,
+  getSlots,
   verifyPickupPin,
 } = require("../controllers/order.controller");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
 
-// Public route for wall-mounted TV display screen in canteen
+// Public routes
 router.get("/display", getDisplayOrders);
+router.get("/slots", getSlots);
 
 router.use(requireAuth);
 router.post("/", createOrder);

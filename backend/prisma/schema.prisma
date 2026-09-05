@@ -22,6 +22,12 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum FoodType {
+  VEG
+  NON_VEG
+  EGG
+}
+
 model User {
   id           String   @id @default(uuid())
   name         String
@@ -30,7 +36,8 @@ model User {
   role         Role     @default(STUDENT)
   createdAt    DateTime @default(now())
 
-  orders Order[]
+  orders  Order[]
+  reviews Review[]
 }
 
 model MenuItem {
@@ -43,10 +50,23 @@ model MenuItem {
   station         String      @default("Main")
   isAvailable     Boolean     @default(true)
   stockQty        Int         @default(0)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+
+  imageUrl    String?
+  foodType    FoodType @default(VEG)
+  isJain      Boolean  @default(false)
+  allergens   String[]
+  calories    Int?
+  protein     Int?
+  carbs       Int?
+  fat         Int?
+  avgRating   Float    @default(0)
+  ratingCount Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   orderItems OrderItem[]
+  reviews    Review[]
 }
 
 model Order {
@@ -59,6 +79,8 @@ model Order {
   totalAmount      Decimal     @db.Decimal(10, 2)
   queuePosition    Int?
   estimatedMinutes Int         @default(5)
+  scheduledSlot    String?
+  scheduledDate    String?
   startedPrepAt    DateTime?
   readyAt          DateTime?
   collectedAt      DateTime?
@@ -66,6 +88,8 @@ model Order {
   updatedAt        DateTime    @updatedAt
 
   items OrderItem[]
+
+  reviews Review[]
 
   @@index([status, createdAt])
 }
@@ -78,4 +102,20 @@ model OrderItem {
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
   quantity   Int
   unitPrice  Decimal  @db.Decimal(10, 2)
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rating     Int // 1..5, validated in the controller
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, menuItemId, orderId])
+  @@index([menuItemId])
 }

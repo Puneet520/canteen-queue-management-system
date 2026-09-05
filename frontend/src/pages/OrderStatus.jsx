@@ -4,6 +4,7 @@ import client from "../api/client";
 import { getSocket } from "../socket";
 import { useAuth } from "../context/AuthContext";
 import { playDingDongChime } from "../utils/audio";
+import StarRating from "../components/StarRating";
 
 export default function OrderStatus() {
   const { id } = useParams();
@@ -35,6 +36,20 @@ export default function OrderStatus() {
       .then(({ data }) => setOrder(data.order))
       .catch(() => setError("Could not load this order"));
   }, [id]);
+
+  // Flip a single item to "reviewed" locally after its rating is submitted.
+  function markItemReviewed(menuItemId) {
+    setOrder((prev) =>
+      prev
+        ? {
+            ...prev,
+            items: prev.items.map((i) =>
+              i.menuItemId === menuItemId ? { ...i, reviewed: true } : i
+            ),
+          }
+        : prev
+    );
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -157,6 +172,11 @@ export default function OrderStatus() {
         </div>
       )}
 
+      {/* Rate your meal (verified purchase) */}
+      {isCollected && (
+        <RateItemsCard order={order} onItemReviewed={markItemReviewed} />
+      )}
+
       {/* Order Items Summary */}
       <div className="card" style={{ marginTop: 20 }}>
         <h2>Order Items</h2>
@@ -197,6 +217,107 @@ export default function OrderStatus() {
           ← Back to my orders
         </Link>
       </div>
+    </div>
+  );
+}
+
+// "Rate your meal" — one interactive star row + optional comment per item the
+// user hasn't reviewed yet. Reviews are verified-purchase: the backend only
+// accepts them for a COLLECTED order that contained the item.
+function RateItemsCard({ order, onItemReviewed }) {
+  const [ratings, setRatings] = useState({});
+  const [comments, setComments] = useState({});
+  const [submitting, setSubmitting] = useState({});
+  const [errors, setErrors] = useState({});
+
+  const pending = order.items.filter((i) => !i.reviewed);
+  const reviewedCount = order.items.length - pending.length;
+
+  async function submit(item) {
+    const rating = ratings[item.menuItemId];
+    if (!rating) {
+      setErrors((e) => ({ ...e, [item.menuItemId]: "Tap a star to rate" }));
+      return;
+    }
+
+    setSubmitting((s) => ({ ...s, [item.menuItemId]: true }));
+    setErrors((e) => ({ ...e, [item.menuItemId]: "" }));
+
+    try {
+      await client.post("/reviews", {
+        orderId: order.id,
+        menuItemId: item.menuItemId,
+        rating,
+        comment: comments[item.menuItemId] || "",
+      });
+      onItemReviewed(item.menuItemId);
+    } catch (err) {
+      setErrors((e) => ({
+        ...e,
+        [item.menuItemId]: err.response?.data?.error || "Could not submit rating",
+      }));
+    } finally {
+      setSubmitting((s) => ({ ...s, [item.menuItemId]: false }));
+    }
+  }
+
+  return (
+    <div className="card rate-meal-card" style={{ marginTop: 20 }}>
+      <h2 style={{ marginTop: 0 }}>⭐ Rate your meal</h2>
+
+      {reviewedCount > 0 && pending.length > 0 && (
+        <p className="muted" style={{ marginTop: -6 }}>
+          Thanks! {reviewedCount} of {order.items.length} rated.
+        </p>
+      )}
+
+      {pending.length === 0 ? (
+        <div className="rate-thanks">
+          <span style={{ fontSize: "2rem" }}>🙏</span>
+          <p>Thanks for rating — it helps other students choose!</p>
+        </div>
+      ) : (
+        <div className="rate-list">
+          {pending.map((item) => (
+            <div key={item.menuItemId} className="rate-row">
+              <div className="rate-row-head">
+                <strong>{item.name}</strong>
+                <StarRating
+                  value={ratings[item.menuItemId] || 0}
+                  onChange={(n) =>
+                    setRatings((r) => ({ ...r, [item.menuItemId]: n }))
+                  }
+                  size={26}
+                />
+              </div>
+
+              <textarea
+                className="input rate-comment"
+                placeholder="Add a short comment (optional)"
+                rows={2}
+                value={comments[item.menuItemId] || ""}
+                onChange={(e) =>
+                  setComments((c) => ({ ...c, [item.menuItemId]: e.target.value }))
+                }
+              />
+
+              {errors[item.menuItemId] && (
+                <div className="error-text" style={{ marginBottom: 8 }}>
+                  {errors[item.menuItemId]}
+                </div>
+              )}
+
+              <button
+                className="btn small"
+                onClick={() => submit(item)}
+                disabled={submitting[item.menuItemId]}
+              >
+                {submitting[item.menuItemId] ? "Submitting…" : "Submit rating"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

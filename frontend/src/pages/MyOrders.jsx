@@ -83,9 +83,14 @@ export default function MyOrders() {
               </div>
             </div>
 
-            <span className={`badge ${o.status}`}>
-              {o.status}
-            </span>
+            <div style={{ textAlign: "right" }}>
+              <span className={`badge ${o.status}`}>
+                {o.status}
+              </span>
+              {o.status === "COLLECTED" && (
+                <div className="rate-nudge">★ Rate your meal →</div>
+              )}
+            </div>
           </div>
         </Link>
       ))}

@@ -6,12 +6,16 @@ const {
   updateMenuItem,
   deleteMenuItem,
 } = require("../controllers/menu.controller");
+const { listItemReviews } = require("../controllers/review.controller");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
 
 // Public — students/faculty browse the live menu
 router.get("/", listMenu);
+
+// Public — recent reviews for a single item (item-detail modal)
+router.get("/:id/reviews", listItemReviews);
 
 // Admin-only management
 router.get("/all", requireAuth, requireRole("ADMIN"), listMenuAdmin);

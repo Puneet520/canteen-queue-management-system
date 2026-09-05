@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import client from "../api/client";
 import { getSocket } from "../socket";
 import { useAuth } from "../context/AuthContext";
+import MenuItemForm from "../components/MenuItemForm";
+import VegBadge from "../components/VegBadge";
 
 const ACTIVE = ["PENDING", "PREPARING", "READY"];
 
@@ -11,9 +13,11 @@ export default function AdminDashboard() {
   const [summary, setSummary] = useState(null);
   const [tab, setTab] = useState("orders"); // orders | menu
   const [menuItems, setMenuItems] = useState([]);
-  const [newItem, setNewItem] = useState({ name: "", price: "", category: "General", stockQty: "" });
   const [error, setError] = useState("");
   const [restockAmounts, setRestockAmounts] = useState({});
+  const [addFormKey, setAddFormKey] = useState(0); // bump to reset the add form
+  const [editingItem, setEditingItem] = useState(null);
+  const [savingItem, setSavingItem] = useState(false);
 
   function loadOrders() {
     client.get("/admin/orders").then(({ data }) => setOrders(data.orders));
@@ -52,19 +56,32 @@ export default function AdminDashboard() {
     }
   }
 
-  async function addMenuItem(e) {
-    e.preventDefault();
+  async function addMenuItem(payload) {
     setError("");
+    setSavingItem(true);
     try {
-      await client.post("/menu", {
-        ...newItem,
-        price: Number(newItem.price),
-        stockQty: Number(newItem.stockQty),
-      });
-      setNewItem({ name: "", price: "", category: "General", stockQty: "" });
+      await client.post("/menu", payload);
+      setAddFormKey((k) => k + 1); // reset the form
       loadMenu();
     } catch (err) {
       setError(err.response?.data?.error || "Could not add item");
+    } finally {
+      setSavingItem(false);
+    }
+  }
+
+  async function saveEdit(payload) {
+    if (!editingItem) return;
+    setError("");
+    setSavingItem(true);
+    try {
+      await client.put(`/menu/${editingItem.id}`, payload);
+      setEditingItem(null);
+      loadMenu();
+    } catch (err) {
+      setError(err.response?.data?.error || "Could not save changes");
+    } finally {
+      setSavingItem(false);
     }
   }
 
@@ -223,66 +240,110 @@ export default function AdminDashboard() {
         <>
           <div className="card">
             <h2>Add menu item</h2>
-            <form onSubmit={addMenuItem} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 8, alignItems: "center" }}>
-              <input className="input" style={{ marginBottom: 0 }} placeholder="Name" value={newItem.name}
-                onChange={(e) => setNewItem((f) => ({ ...f, name: e.target.value }))} required />
-              <input className="input" style={{ marginBottom: 0 }} placeholder="Price" type="number" step="0.01" value={newItem.price}
-                onChange={(e) => setNewItem((f) => ({ ...f, price: e.target.value }))} required />
-              <input className="input" style={{ marginBottom: 0 }} placeholder="Category" value={newItem.category}
-                onChange={(e) => setNewItem((f) => ({ ...f, category: e.target.value }))} />
-              <input className="input" style={{ marginBottom: 0 }} placeholder="Stock" type="number" value={newItem.stockQty}
-                onChange={(e) => setNewItem((f) => ({ ...f, stockQty: e.target.value }))} required />
-              <button className="btn small">Add</button>
-            </form>
+            <MenuItemForm
+              key={addFormKey}
+              onSubmit={addMenuItem}
+              submitLabel="Add item"
+              busy={savingItem}
+            />
           </div>
 
-          <h2>All items</h2>
-          {menuItems.map((item) => (
-            <div key={item.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <strong>{item.name}</strong> — ₹{Number(item.price).toFixed(2)} — {item.category}
-                <div className="muted">Stock: {item.stockQty}</div>
+          <h2>All items ({menuItems.length})</h2>
+          {menuItems.map((item) => {
+            const unavailable = !item.isAvailable || item.stockQty === 0;
+            return (
+              <div key={item.id} className="card admin-menu-row">
+                <div className="admin-menu-thumb">
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} alt={item.name} loading="lazy" />
+                  ) : (
+                    <span>🍽️</span>
+                  )}
+                </div>
+
+                <div className="admin-menu-info">
+                  <div className="admin-menu-name">
+                    <VegBadge type={item.foodType} isJain={item.isJain} size={14} />
+                    <strong>{item.name}</strong>
+                    {unavailable && <span className="badge CANCELLED">Out</span>}
+                  </div>
+                  <div className="muted">
+                    ₹{Number(item.price).toFixed(2)} · {item.category} · Stock: {item.stockQty}
+                    {item.ratingCount > 0 && (
+                      <> · ★ {item.avgRating.toFixed(1)} ({item.ratingCount})</>
+                    )}
+                  </div>
+                </div>
+
+                <div className="admin-menu-actions">
+                  <input
+                    className="input"
+                    style={{ width: 80, marginBottom: 0 }}
+                    type="number"
+                    min="1"
+                    placeholder="Qty"
+                    value={restockAmounts[item.id] || ""}
+                    onChange={(e) =>
+                      setRestockAmounts((current) => ({
+                        ...current,
+                        [item.id]: e.target.value,
+                      }))
+                    }
+                  />
+
+                  <button className="btn small" onClick={() => restockItem(item)}>
+                    Restock
+                  </button>
+
+                  <button className="btn small secondary" onClick={() => setEditingItem(item)}>
+                    Edit
+                  </button>
+
+                  <button
+                    className="btn small secondary"
+                    onClick={() => toggleAvailability(item)}
+                  >
+                    {item.isAvailable ? "Hide" : "Show"}
+                  </button>
+
+                  <button className="btn small danger" onClick={() => deleteItem(item.id)}>
+                    Delete
+                  </button>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  className="input"
-                  style={{ width: 90, marginBottom: 0 }}
-                  type="number"
-                  min="1"
-                  placeholder="Qty"
-                  value={restockAmounts[item.id] || ""}
-                  onChange={(e) =>
-                    setRestockAmounts((current) => ({
-                      ...current,
-                      [item.id]: e.target.value,
-                    }))
-                  }
-                />
-
-                <button
-                  className="btn small"
-                  onClick={() => restockItem(item)}
-                >
-                  Restock
-                </button>
-
-                <button
-                  className="btn small secondary"
-                  onClick={() => toggleAvailability(item)}
-                >
-                  {item.isAvailable ? "Mark unavailable" : "Mark available"}
-                </button>
-
-                <button
-                  className="btn small danger"
-                  onClick={() => deleteItem(item.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </>
+      )}
+
+      {/* Edit item modal */}
+      {editingItem && (
+        <div className="modal-backdrop" onClick={() => setEditingItem(null)}>
+          <div
+            className="item-modal admin-edit-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Edit ${editingItem.name}`}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setEditingItem(null)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <div className="item-modal-body">
+              <h2 style={{ marginTop: 0 }}>Edit “{editingItem.name}”</h2>
+              <MenuItemForm
+                initial={editingItem}
+                onSubmit={saveEdit}
+                submitLabel="Save changes"
+                busy={savingItem}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

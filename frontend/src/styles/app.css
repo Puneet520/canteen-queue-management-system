@@ -2760,3 +2760,654 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   MENU RICHNESS + RATINGS
+   Veg badge, star rating, allergens, nutrition, item modal,
+   dietary filter, rating form, admin menu rows
+   ========================================================= */
+
+/* --- Veg / non-veg / egg badge --- */
+.veg-badge-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+}
+
+.veg-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--veg-color, #0f7a3d);
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.veg-badge-dot {
+  width: 46%;
+  height: 46%;
+  border-radius: 50%;
+  background: var(--veg-color, #0f7a3d);
+}
+
+.veg-badge-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.jain-tag {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #0f7a3d;
+  background: #e3f5e9;
+  border: 1px solid #b9e4c8;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+/* --- Star rating --- */
+.star-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.star-row {
+  display: inline-flex;
+  line-height: 1;
+}
+
+.star {
+  position: relative;
+  display: inline-block;
+  line-height: 1;
+}
+
+.star-bg {
+  color: #dcd8cb;
+}
+
+.star-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #f5a623;
+}
+
+.star-interactive {
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.star-interactive:hover {
+  transform: scale(1.15);
+}
+
+.star-interactive:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.star-meta {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.star-count {
+  font-weight: 500;
+}
+
+/* --- Food card: image, badges, allergens --- */
+.food-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s ease;
+}
+
+.food-card:hover .food-image {
+  transform: scale(1.05);
+}
+
+.food-veg-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 5px;
+  padding: 3px;
+  box-shadow: 0 1px 4px rgba(31, 56, 100, 0.12);
+  z-index: 2;
+}
+
+.food-cal-badge {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+  z-index: 2;
+}
+
+.food-rating-row {
+  margin: 4px 0 2px;
+  min-height: 18px;
+}
+
+.food-allergens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 2px 0 12px;
+}
+
+.allergen-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.allergen-chip.small {
+  font-size: 0.64rem;
+  padding: 2px 7px;
+  background: #f3f1ea;
+  color: #6b6a64;
+}
+
+/* --- Dietary filter row --- */
+.diet-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-bottom: 22px;
+}
+
+.diet-pill {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text-muted);
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.diet-pill span {
+  margin-right: 4px;
+}
+
+.diet-pill:hover {
+  transform: translateY(-1px);
+  border-color: #c9c6bc;
+}
+
+.diet-pill.active {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(15, 110, 86, 0.16);
+}
+
+/* --- Item detail modal --- */
+.item-modal {
+  position: relative;
+  background: #fff;
+  border-radius: 20px;
+  width: min(560px, calc(100% - 32px));
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  animation: itemModalEnter 0.28s ease both;
+}
+
+@keyframes itemModalEnter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 3;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.modal-close:hover {
+  transform: scale(1.08);
+  background: #fff;
+}
+
+.item-modal-hero {
+  position: relative;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: linear-gradient(135deg, #edf1f8, #dce5f2);
+}
+
+.item-modal-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.item-modal-hero-emoji {
+  font-size: 5.5rem;
+  filter: drop-shadow(0 10px 8px rgba(31, 56, 100, 0.12));
+}
+
+.item-modal-body {
+  padding: 22px 24px 26px;
+}
+
+.item-modal-titlerow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.item-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.item-modal-title h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.item-modal-price {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--navy);
+  white-space: nowrap;
+}
+
+.item-modal-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 14px;
+}
+
+.item-modal-category {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--navy);
+  background: #eef3f7;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.item-modal-desc {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+
+/* Nutrition block */
+.nutrition-block h4,
+.allergen-block h4,
+.reviews-block h4 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: var(--navy);
+}
+
+.nutrition-block {
+  margin-bottom: 18px;
+}
+
+.nutrition-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.nutrition-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 12px 6px;
+  background: #f7f7f5;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.nutrition-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--navy);
+}
+
+.nutrition-value small {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 1px;
+}
+
+.nutrition-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Allergen block */
+.allergen-block {
+  margin-bottom: 18px;
+}
+
+.allergen-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+/* Add-to-cart row inside modal */
+.item-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 4px 0 20px;
+}
+
+/* Reviews */
+.reviews-block {
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+
+.review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.review-item {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.review-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.review-item-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.review-author {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.review-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.review-comment {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+/* --- "Rate your meal" card (Order Status) --- */
+.rate-meal-card {
+  border-color: #f2dfae;
+  background: linear-gradient(135deg, #fffaf0, #fefcf7);
+}
+
+.rate-thanks {
+  text-align: center;
+  padding: 10px 0 4px;
+  color: var(--teal);
+}
+
+.rate-thanks p {
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+
+.rate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rate-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: #fff;
+}
+
+.rate-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.rate-comment {
+  margin-bottom: 10px;
+  resize: vertical;
+}
+
+/* --- MyOrders rate nudge --- */
+.rate-nudge {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+/* --- Admin: menu item form --- */
+.menu-item-form {
+  margin-top: 4px;
+}
+
+.mif-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mif-field {
+  grid-column: span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mif-field > span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.mif-field .input {
+  margin-bottom: 0;
+}
+
+.mif-col-2 {
+  grid-column: span 4;
+}
+
+.mif-col-3 {
+  grid-column: span 6;
+}
+
+.mif-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  padding-bottom: 10px;
+}
+
+.mif-check input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--teal);
+}
+
+.mif-check > span {
+  font-size: 0.85rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* --- Admin: menu item rows --- */
+.admin-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-menu-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef1f6;
+  font-size: 1.6rem;
+}
+
+.admin-menu-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-menu-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-menu-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-menu-name .badge {
+  padding: 2px 7px;
+  font-size: 0.62rem;
+}
+
+.admin-menu-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-edit-modal {
+  width: min(760px, calc(100% - 32px));
+}
+
+@media (max-width: 640px) {
+  .nutrition-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .mif-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mif-col-2,
+  .mif-col-3 {
+    grid-column: 1 / -1;
+  }
+
+  .mif-field {
+    grid-column: span 1;
+  }
+
+  .mif-check {
+    grid-column: 1 / -1;
+    padding-bottom: 0;
+  }
+
+  .admin-menu-row {
+    flex-wrap: wrap;
+  }
+
+  .admin-menu-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item-modal {
+    animation: none;
+  }
+
+  .food-card:hover .food-image {
+    transform: none;
+  }
+}

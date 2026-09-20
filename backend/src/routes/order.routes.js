@@ -6,6 +6,7 @@ const {
   cancelOrder,
   getDisplayOrders,
   getSlots,
+  getCrowdMetrics,
   verifyPickupPin,
 } = require("../controllers/order.controller");
 const { requireAuth } = require("../middleware/auth");
@@ -15,6 +16,7 @@ const router = express.Router();
 // Public routes
 router.get("/display", getDisplayOrders);
 router.get("/slots", getSlots);
+router.get("/crowd", getCrowdMetrics);
 
 router.use(requireAuth);
 router.post("/", createOrder);

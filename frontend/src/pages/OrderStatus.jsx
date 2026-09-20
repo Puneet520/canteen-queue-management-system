@@ -136,8 +136,24 @@ export default function OrderStatus() {
         </div>
       )}
 
-      {/* Active Queue Position Banner */}
-      {isActive && order.queuePosition && (
+      {/* Scheduled Break Slot Banner (if scheduled and before cooking window) */}
+      {order.isScheduled && !order.isInCookingWindow && order.status === "PENDING" && (
+        <div className="card" style={{ background: "#f0f9ff", borderColor: "#bae6fd", padding: "24px 20px", textAlign: "center", marginTop: 20 }}>
+          <span style={{ fontSize: "2.4rem", display: "block", marginBottom: 6 }}>⏰</span>
+          <span className="badge PREPARING" style={{ fontSize: "0.8rem", padding: "4px 12px", marginBottom: 8 }}>
+            SCHEDULED PRE-ORDER
+          </span>
+          <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "var(--navy)", margin: "8px 0" }}>
+            Pickup Window: {order.scheduledSlotLabel || order.scheduledSlot}
+          </div>
+          <p className="muted" style={{ margin: "6px auto 0", maxWidth: 480, fontSize: "0.88rem", lineHeight: 1.5 }}>
+            Your meal is booked! The kitchen will begin cooking approximately 12 minutes before your slot starts so it's fresh and piping hot right as you arrive.
+          </p>
+        </div>
+      )}
+
+      {/* Active Queue Position Banner (immediate orders or scheduled orders now cooking) */}
+      {isActive && (!order.isScheduled || order.isInCookingWindow) && order.queuePosition && (
         <div className="queue-banner" style={{ marginTop: 20 }}>
           <div className="muted">Your position in the live queue</div>
           <div className="position">#{order.queuePosition}</div>

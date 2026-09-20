@@ -70,10 +70,97 @@ function generatePickupPin() {
   return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
+const { isOrderInCookingWindow, getTodayDateString } = require("./slots");
+
+async function getCrowdStatus(prisma) {
+  const todayStr = getTodayDateString();
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+  // Active cooking orders: PENDING or PREPARING
+  const activeOrders = await prisma.order.findMany({
+    where: {
+      status: { in: ACTIVE_STATUSES },
+      OR: [
+        { scheduledDate: null },
+        { scheduledDate: todayStr },
+      ],
+    },
+    include: {
+      items: { include: { menuItem: true } },
+    },
+  });
+
+  // Filter to orders currently in their cooking window
+  const activeInWindow = activeOrders.filter((o) =>
+    isOrderInCookingWindow(o.scheduledSlot, o.scheduledDate)
+  );
+
+  const activeCount = activeInWindow.length;
+
+  // Ready orders waiting for pickup at the counter
+  const readyCount = await prisma.order.count({
+    where: {
+      status: "READY",
+      OR: [
+        { scheduledDate: null },
+        { scheduledDate: todayStr },
+      ],
+    },
+  });
+
+  // Orders placed in the last 15 minutes (rush velocity)
+  const recentOrders15m = await prisma.order.count({
+    where: {
+      createdAt: { gte: fifteenMinutesAgo },
+      status: { notIn: ["CANCELLED"] },
+    },
+  });
+
+  // Estimated wait time for a new order arriving right now
+  const simulatedPosition = activeCount + 1;
+  const estWaitMinutes = estimateWaitMinutes(simulatedPosition, [], "PENDING");
+
+  let level = "LOW";
+  let label = "Low Wait";
+  let color = "#10b981"; // emerald
+  let advice = "Kitchen running fast — great time to order!";
+
+  if (activeCount >= 10 || (activeCount >= 6 && recentOrders15m >= 8)) {
+    level = "PEAK";
+    label = "Peak Rush";
+    color = "#ef4444";
+    advice = "High rush at counter! Consider pre-ordering for an upcoming break slot.";
+  } else if (activeCount >= 4 || recentOrders15m >= 4) {
+    level = "MODERATE";
+    label = "Moderate Rush";
+    color = "#f59e0b";
+    advice = "Steady queue. Preparation takes around 8–12 mins.";
+  }
+
+  const displayWait =
+    level === "PEAK"
+      ? Math.max(estWaitMinutes, 22)
+      : level === "MODERATE"
+        ? Math.max(estWaitMinutes, 10)
+        : Math.max(estWaitMinutes, 4);
+
+  return {
+    level,
+    label,
+    color,
+    advice,
+    activeCount,
+    readyCount,
+    recentOrders15m,
+    estWaitMinutes: displayWait,
+  };
+}
+
 module.exports = {
   getQueuePosition,
   estimateWaitMinutes,
   generateToken,
   generatePickupPin,
+  getCrowdStatus,
   ACTIVE_STATUSES,
 };

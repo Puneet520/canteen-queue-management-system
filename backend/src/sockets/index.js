@@ -66,6 +66,11 @@ function emitMenuStockChanged(items) {
   getIO().emit("menu:stock-changed", items);
 }
 
+// Emit crowd congestion and velocity updates to all visitors
+function emitCrowdUpdated(crowdMetrics) {
+  getIO().emit("crowd:updated", crowdMetrics);
+}
+
 module.exports = {
   initSockets,
   getIO,
@@ -73,4 +78,5 @@ module.exports = {
   emitAdminOrdersChanged,
   emitDisplayOrdersChanged,
   emitMenuStockChanged,
+  emitCrowdUpdated,
 };

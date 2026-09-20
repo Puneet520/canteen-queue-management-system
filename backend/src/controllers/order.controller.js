@@ -5,6 +5,7 @@ const {
   estimateWaitMinutes,
   generateToken,
   generatePickupPin,
+  getCrowdStatus,
   ACTIVE_STATUSES,
 } = require("../utils/queue");
 const {
@@ -12,6 +13,7 @@ const {
   emitAdminOrdersChanged,
   emitDisplayOrdersChanged,
   emitMenuStockChanged,
+  emitCrowdUpdated,
 } = require("../sockets");
 const {
   getAvailableSlots,
@@ -19,6 +21,8 @@ const {
   isOrderInCookingWindow,
   formatSlotLabel,
   MAX_SLOT_CAPACITY,
+  PREP_WINDOW_MINUTES,
+  isValidSlot,
 } = require("../utils/slots");
 
 function serializeOrder(order, position, reviewedItemIds) {
@@ -37,6 +41,7 @@ function serializeOrder(order, position, reviewedItemIds) {
     scheduledSlot: order.scheduledSlot || null,
     scheduledSlotLabel: order.scheduledSlot ? formatSlotLabel(order.scheduledSlot) : null,
     scheduledDate: order.scheduledDate || null,
+    tableNumber: order.tableNumber || null,
     isScheduled: Boolean(order.scheduledSlot),
     isInCookingWindow: inWindow,
     items: (order.items || []).map((i) => ({
@@ -57,7 +62,7 @@ function serializeOrder(order, position, reviewedItemIds) {
 // POST /api/orders — place a pre-order (FR-5, FR-6, FR-7)
 // Stock check and decrement are performed atomically to prevent overselling.
 const createOrder = asyncHandler(async (req, res) => {
-  const { items, scheduledSlot } = req.body;
+  const { items, scheduledSlot, tableNumber } = req.body;
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Cart is empty" });
@@ -68,7 +73,23 @@ const createOrder = asyncHandler(async (req, res) => {
   let targetDate = null;
 
   if (scheduledSlot && typeof scheduledSlot === "string" && scheduledSlot.trim()) {
-    targetSlot = scheduledSlot.trim();
+    const trimmed = scheduledSlot.trim();
+    if (!isValidSlot(trimmed)) {
+      return res.status(400).json({ error: `Invalid pickup slot: "${scheduledSlot}".` });
+    }
+
+    const [startTime] = trimmed.split("-");
+    const [h, m] = startTime.split(":").map(Number);
+    const slotStartMinutes = h * 60 + m;
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    if (slotStartMinutes <= currentMinutes + PREP_WINDOW_MINUTES) {
+      return res.status(400).json({
+        error: `Slot "${formatSlotLabel(trimmed)}" is no longer available for pre-order. Please pick a later slot or choose "Prepare Now".`,
+      });
+    }
+
+    targetSlot = trimmed;
     targetDate = todayStr;
   }
 
@@ -174,6 +195,7 @@ const createOrder = asyncHandler(async (req, res) => {
         status: "PENDING",
         scheduledSlot: targetSlot,
         scheduledDate: targetDate,
+        tableNumber: tableNumber && typeof tableNumber === "string" ? tableNumber.trim() : null,
         items: {
           create: orderItemsData,
         },
@@ -213,18 +235,20 @@ const createOrder = asyncHandler(async (req, res) => {
     order: serialized,
   });
 
-  emitDisplayOrdersChanged({
-    type: "created",
-    order: {
-      id: serialized.id,
-      token: serialized.token,
-      status: serialized.status,
-      queuePosition: serialized.queuePosition,
-      estimatedWaitMinutes: serialized.estimatedWaitMinutes,
-      createdAt: serialized.createdAt,
-      updatedAt: serialized.updatedAt,
-    },
-  });
+  if (inWindow) {
+    emitDisplayOrdersChanged({
+      type: "created",
+      order: {
+        id: serialized.id,
+        token: serialized.token,
+        status: serialized.status,
+        queuePosition: serialized.queuePosition,
+        estimatedWaitMinutes: serialized.estimatedWaitMinutes,
+        createdAt: serialized.createdAt,
+        updatedAt: serialized.updatedAt,
+      },
+    });
+  }
 
   // Tell all connected clients that menu stock has changed.
   const updatedMenuItems = await prisma.menuItem.findMany({
@@ -232,6 +256,7 @@ const createOrder = asyncHandler(async (req, res) => {
   });
 
   emitMenuStockChanged(updatedMenuItems);
+  emitCrowdUpdated(await getCrowdStatus(prisma));
 
   res.status(201).json({ order: serialized });
 });
@@ -351,6 +376,7 @@ const cancelOrder = asyncHandler(async (req, res) => {
   });
 
   emitMenuStockChanged(updatedMenuItems);
+  emitCrowdUpdated(await getCrowdStatus(prisma));
 
   res.json({ order: serialized });
 });
@@ -451,8 +477,15 @@ const verifyPickupPin = asyncHandler(async (req, res) => {
   emitOrderUpdate(collectedOrder.userId, serialized);
   emitAdminOrdersChanged({ type: "updated", order: serialized });
   emitDisplayOrdersChanged({ type: "collected", order: serialized });
+  emitCrowdUpdated(await getCrowdStatus(prisma));
 
   res.json({ success: true, order: serialized });
+});
+
+// GET /api/orders/crowd — public live crowd metrics & rush velocity
+const getCrowdMetrics = asyncHandler(async (req, res) => {
+  const metrics = await getCrowdStatus(prisma);
+  res.json(metrics);
 });
 
 module.exports = {
@@ -462,6 +495,7 @@ module.exports = {
   cancelOrder,
   getDisplayOrders,
   getSlots,
+  getCrowdMetrics,
   verifyPickupPin,
   serializeOrder,
 };

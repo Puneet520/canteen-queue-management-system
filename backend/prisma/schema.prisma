@@ -81,6 +81,7 @@ model Order {
   estimatedMinutes Int         @default(5)
   scheduledSlot    String?
   scheduledDate    String?
+  tableNumber      String?
   startedPrepAt    DateTime?
   readyAt          DateTime?
   collectedAt      DateTime?

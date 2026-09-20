@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import client from "../api/client";
 import { getSocket } from "../socket";
 import { useAuth } from "../context/AuthContext";
 import VegBadge from "../components/VegBadge";
 import StarRating from "../components/StarRating";
 import ItemDetailModal from "../components/ItemDetailModal";
+import CrowdMeter from "../components/CrowdMeter";
 
 const CATEGORY_ICONS = {
   Meals: "🍛",
@@ -71,6 +72,8 @@ const CATEGORY_COLORS = {
 
 export default function Menu() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const tableNumber = (searchParams.get("table") || "").trim();
 
   const [items, setItems] = useState([]);
   const [cart, setCart] = useState({});
@@ -81,6 +84,11 @@ export default function Menu() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [dietFilter, setDietFilter] = useState("All"); // All | Veg | Non-veg | Jain
   const [selectedItemId, setSelectedItemId] = useState(null);
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [orderTiming, setOrderTiming] = useState("now"); // "now" | "scheduled"
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [selectedSlot, setSelectedSlot] = useState("");
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   const navigate = useNavigate();
 
@@ -91,6 +99,25 @@ export default function Menu() {
       .catch(() => setError("Could not load the menu"))
       .finally(() => setLoading(false));
   }, []);
+
+  // Load available break slots whenever checkout modal is opened
+  useEffect(() => {
+    if (showCheckoutModal) {
+      setLoadingSlots(true);
+      client
+        .get("/orders/slots")
+        .then(({ data }) => {
+          const slots = data.slots || [];
+          setAvailableSlots(slots);
+          const firstOpen = slots.find((s) => !s.isFull);
+          if (firstOpen) {
+            setSelectedSlot(firstOpen.slot);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingSlots(false));
+    }
+  }, [showCheckoutModal]);
 
   // Real-time stock/menu updates through Socket.IO.
   useEffect(() => {
@@ -198,11 +225,9 @@ export default function Menu() {
     0
   );
 
-  // Derive the modal item from live `items` so its stock/rating stay current
-  // while the modal is open (socket updates flow straight through).
   const modalItem = items.find((i) => i.id === selectedItemId) || null;
 
-  async function placeOrder() {
+  async function confirmPlaceOrder() {
     setError("");
     setPlacing(true);
 
@@ -212,16 +237,20 @@ export default function Menu() {
           menuItemId: item.id,
           quantity,
         })),
+        scheduledSlot: orderTiming === "scheduled" ? selectedSlot : null,
+        tableNumber: tableNumber || null,
       };
 
       const { data } = await client.post("/orders", payload);
 
+      setShowCheckoutModal(false);
       navigate(`/orders/${data.order.id}`);
     } catch (err) {
       const message =
         err.response?.data?.error || "Could not place order";
 
       setError(message);
+      setShowCheckoutModal(false);
 
       // Refresh menu stock because another student may have
       // purchased an item while it was in this student's cart.
@@ -291,6 +320,9 @@ export default function Menu() {
             Fresh food, simple ordering and a spot in the
             queue — without the waiting.
           </p>
+          {tableNumber && (
+            <div className="table-dinein-pill">Dine-in: Table #{tableNumber}</div>
+          )}
         </div>
 
         <div className="menu-hero-decoration">
@@ -299,6 +331,13 @@ export default function Menu() {
           <span>🥤</span>
         </div>
       </section>
+
+      <CrowdMeter
+        onSkipRush={() => {
+          setOrderTiming("scheduled");
+          setShowCheckoutModal(true);
+        }}
+      />
 
       {/* Search */}
       <div className="menu-search-wrapper">
@@ -510,13 +549,155 @@ export default function Menu() {
 
           <button
             className="btn floating-cart-button"
-            onClick={placeOrder}
+            onClick={() => setShowCheckoutModal(true)}
             disabled={placing}
           >
-            {placing
-              ? "Placing..."
-              : "Place pre-order →"}
+            Review & Place Order →
           </button>
+        </div>
+      )}
+
+      {/* Checkout & Break Slot Scheduling Modal */}
+      {showCheckoutModal && (
+        <div className="modal-backdrop" onClick={() => setShowCheckoutModal(false)}>
+          <div className="modal-card checkout-modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: "1.4rem", color: "var(--navy)" }}>Review & Schedule Order</h2>
+              <button
+                className="menu-search-clear"
+                onClick={() => setShowCheckoutModal(false)}
+                style={{ position: "static", transform: "none" }}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Cart Items Summary */}
+            <div className="checkout-summary-box">
+              <div style={{ maxHeight: 150, overflowY: "auto", paddingRight: 4 }}>
+                {cartLines.map(({ item, quantity }) => (
+                  <div key={item.id} className="checkout-item-line">
+                    <span><strong>{quantity}x</strong> {item.name}</span>
+                    <span>₹{(Number(item.price) * quantity).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="checkout-total-row">
+                <strong>Total Amount:</strong>
+                <strong>₹{total.toFixed(2)}</strong>
+              </div>
+            </div>
+
+            {tableNumber && (
+              <div className="table-dinein-pill" style={{ marginBottom: 12 }}>
+                Ticket will print Table #{tableNumber}
+              </div>
+            )}
+
+            {/* Pickup Timing Options */}
+            <div style={{ margin: "20px 0 10px" }}>
+              <label style={{ display: "block", fontWeight: 700, marginBottom: 10, color: "var(--navy)" }}>
+                When would you like to pick up?
+              </label>
+
+              <div className="checkout-timing-toggle">
+                <button
+                  type="button"
+                  className={`timing-pill-btn ${orderTiming === "now" ? "active" : ""}`}
+                  onClick={() => setOrderTiming("now")}
+                >
+                  <span style={{ fontSize: "1.3rem" }}>⚡</span>
+                  <div>
+                    <strong>Prepare Now</strong>
+                    <p style={{ margin: 0, fontSize: "0.74rem", color: "var(--text-muted)" }}>
+                      Cook immediately in FIFO queue (~4–6 min)
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className={`timing-pill-btn ${orderTiming === "scheduled" ? "active" : ""}`}
+                  onClick={() => setOrderTiming("scheduled")}
+                >
+                  <span style={{ fontSize: "1.3rem" }}>⏰</span>
+                  <div>
+                    <strong>Schedule for Break</strong>
+                    <p style={{ margin: 0, fontSize: "0.74rem", color: "var(--text-muted)" }}>
+                      Pick a 15-min break slot today
+                    </p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Slot Picker if scheduled */}
+              {orderTiming === "scheduled" && (
+                <div style={{ marginTop: 16 }}>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 8, color: "var(--navy)" }}>
+                    Select Today's Break Slot:
+                  </label>
+
+                  {loadingSlots ? (
+                    <div className="muted" style={{ padding: "12px 0", textAlign: "center" }}>
+                      Loading available slots...
+                    </div>
+                  ) : availableSlots.length === 0 ? (
+                    <div className="error-text" style={{ fontSize: "0.85rem" }}>
+                      No more future break slots available today. Please select "Prepare Now".
+                    </div>
+                  ) : (
+                    <div className="checkout-slots-grid">
+                      {availableSlots.map((s) => (
+                        <div
+                          key={s.slot}
+                          className={`checkout-slot-card ${selectedSlot === s.slot ? "selected" : ""} ${s.isFull ? "disabled" : ""}`}
+                          onClick={() => {
+                            if (!s.isFull) setSelectedSlot(s.slot);
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <strong style={{ fontSize: "0.92rem", color: "var(--navy)" }}>{s.startTime} – {s.endTime}</strong>
+                            {s.isBreakSlot && (
+                              <span className="badge PREPARING" style={{ fontSize: "0.65rem", padding: "1px 6px" }}>
+                                {s.breakName || "Break"}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: "0.74rem", marginTop: 4, color: s.isFull ? "var(--coral)" : "var(--text-muted)" }}>
+                            {s.isFull ? "Slot Full (Max reached)" : `${s.remaining} spots left`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ flex: 1 }}
+                onClick={() => setShowCheckoutModal(false)}
+                disabled={placing}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="btn"
+                style={{ flex: 2 }}
+                onClick={confirmPlaceOrder}
+                disabled={placing || (orderTiming === "scheduled" && (!selectedSlot || availableSlots.length === 0))}
+              >
+                {placing ? "Placing Order..." : `Confirm & Order (₹${total.toFixed(2)}) →`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

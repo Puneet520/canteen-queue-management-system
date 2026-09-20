@@ -164,8 +164,20 @@ async function main() {
     }
   }
 
+  await prisma.user.upsert({
+    where: { email: "student@canteen.edu" },
+    update: {},
+    create: {
+      name: "Demo Student",
+      email: "student@canteen.edu",
+      passwordHash: await bcrypt.hash("Student@123", 10),
+      role: "STUDENT",
+    },
+  });
+
   console.log("Seed complete.");
   console.log("Admin login -> email: admin@canteen.edu | password: Admin@123");
+  console.log("Student demo -> email: student@canteen.edu | password: Student@123");
   console.log(`Seeded ${items.length} menu items.`);
 }
 

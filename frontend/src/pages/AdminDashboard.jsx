@@ -4,6 +4,7 @@ import { getSocket } from "../socket";
 import { useAuth } from "../context/AuthContext";
 import MenuItemForm from "../components/MenuItemForm";
 import VegBadge from "../components/VegBadge";
+import QRPosterGenerator from "../components/QRPosterGenerator";
 
 const ACTIVE = ["PENDING", "PREPARING", "READY"];
 
@@ -11,7 +12,7 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [tab, setTab] = useState("orders"); // orders | menu
+  const [tab, setTab] = useState("orders"); // orders | menu | posters
   const [menuItems, setMenuItems] = useState([]);
   const [error, setError] = useState("");
   const [restockAmounts, setRestockAmounts] = useState({});
@@ -126,6 +127,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="page">
+      <div className="no-print">
       <h1>Admin Dashboard</h1>
       {error && <div className="error-text">{error}</div>}
 
@@ -202,10 +204,12 @@ export default function AdminDashboard() {
           </button>
         </form>
       </div>
+      </div>
 
-      <div style={{ marginBottom: 16 }}>
+      <div className="no-print" style={{ marginBottom: 16 }}>
         <button className={`btn small ${tab === "orders" ? "" : "secondary"}`} onClick={() => setTab("orders")}>Order Queue</button>{" "}
-        <button className={`btn small ${tab === "menu" ? "" : "secondary"}`} onClick={() => setTab("menu")}>Menu Management</button>
+        <button className={`btn small ${tab === "menu" ? "" : "secondary"}`} onClick={() => setTab("menu")}>Menu Management</button>{" "}
+        <button className={`btn small ${tab === "posters" ? "" : "secondary"}`} onClick={() => setTab("posters")}>Printable QR Posters 🖨️</button>
       </div>
 
       {tab === "orders" && (
@@ -221,6 +225,7 @@ export default function AdminDashboard() {
                 </span>
                 <div className="muted">
                   {o.items.map((i) => `${i.name} x${i.quantity}`).join(", ")}
+                  {o.tableNumber ? ` · Table #${o.tableNumber}` : ""}
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -235,6 +240,8 @@ export default function AdminDashboard() {
           ))}
         </>
       )}
+
+      {tab === "posters" && <QRPosterGenerator />}
 
       {tab === "menu" && (
         <>

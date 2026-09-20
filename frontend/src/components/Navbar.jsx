@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
@@ -13,47 +13,55 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-links">
-        <Link to="/" className="brand" style={{ marginRight: 24, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>🍽</span>
-          <span>Canteen Queue</span>
+        <Link to="/" className="brand navbar-brand">
+          <span className="brand-mark">🍽</span>
+          <span>Campus Canteen</span>
+          <span className="live-dot" title="Kitchen Active" />
+          <span className="live-label">Kitchen Active</span>
         </Link>
 
         {user && user.role !== "ADMIN" && (
           <>
-            <Link to="/menu">Menu</Link>
-            <Link to="/orders">My Orders</Link>
+            <NavLink to="/menu" className={({ isActive }) => `nav-pill ${isActive ? "active" : ""}`}>
+              Menu
+            </NavLink>
+            <NavLink to="/orders" className={({ isActive }) => `nav-pill ${isActive ? "active" : ""}`}>
+              My Orders
+            </NavLink>
           </>
         )}
 
         {user && user.role === "ADMIN" && (
           <>
-            <Link to="/admin">Admin</Link>
-            <Link to="/kitchen">Kitchen KDS</Link>
+            <NavLink to="/admin" className={({ isActive }) => `nav-pill ${isActive ? "active" : ""}`}>
+              Admin
+            </NavLink>
+            <NavLink to="/kitchen" className={({ isActive }) => `nav-pill ${isActive ? "active" : ""}`}>
+              Kitchen KDS
+            </NavLink>
           </>
         )}
 
-        <Link
-          to="/display"
-          target="_blank"
-          style={{
-            background: "rgba(255, 255, 255, 0.15)",
-            padding: "4px 10px",
-            borderRadius: "6px",
-            fontSize: "0.85rem",
-          }}
-        >
-          📺 Live TV Screen
+        <Link to="/display" target="_blank" className="nav-tv-link">
+          📺 Wall TV Display
         </Link>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div className="navbar-user">
         {user ? (
           <>
-            <span style={{ fontSize: "0.9rem" }}>{user.name} ({user.role})</span>
-            <button onClick={handleLogout}>Logout</button>
+            <span className="profile-chip">
+              <span className="profile-name">{user.name}</span>
+              <span className="profile-role">{user.role}</span>
+            </span>
+            <button type="button" onClick={handleLogout}>
+              Logout
+            </button>
           </>
         ) : (
-          <Link to="/login">Login</Link>
+          <NavLink to="/login" className="nav-pill">
+            Login
+          </NavLink>
         )}
       </div>
     </nav>

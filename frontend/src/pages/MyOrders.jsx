@@ -32,11 +32,7 @@ export default function MyOrders() {
           order.id === updatedOrder.id
             ? {
                 ...order,
-                status: updatedOrder.status,
-                queuePosition: updatedOrder.queuePosition,
-                estimatedWaitMinutes:
-                  updatedOrder.estimatedWaitMinutes,
-                updatedAt: updatedOrder.updatedAt,
+                ...updatedOrder,
               }
             : order
         )
@@ -62,38 +58,47 @@ export default function MyOrders() {
         </p>
       )}
 
-      {orders.map((o) => (
-        <Link
-          key={o.id}
-          to={`/orders/${o.id}`}
-          style={{ textDecoration: "none", color: "inherit" }}
-        >
-          <div
-            className="card"
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <strong>{o.token}</strong>
-              <div className="muted">
-                {new Date(o.createdAt).toLocaleString()}
-              </div>
-            </div>
+      <div className="order-receipt-list">
+        {orders.map((o) => {
+          const itemsSummary = (o.items || [])
+            .map((i) => `${i.name} ×${i.quantity}`)
+            .join(", ");
 
-            <div style={{ textAlign: "right" }}>
-              <span className={`badge ${o.status}`}>
-                {o.status}
-              </span>
-              {o.status === "COLLECTED" && (
-                <div className="rate-nudge">★ Rate your meal →</div>
-              )}
-            </div>
-          </div>
-        </Link>
-      ))}
+          return (
+            <Link
+              key={o.id}
+              to={`/orders/${o.id}`}
+              className="order-receipt-link"
+            >
+              <article className="card order-receipt">
+                <div className="order-receipt-top">
+                  <div>
+                    <div className="order-receipt-token">{o.token}</div>
+                    <div className="muted">
+                      {new Date(o.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <span className={`badge ${o.status}`}>{o.status}</span>
+                </div>
+
+                <p className="order-receipt-items">{itemsSummary || "Order items"}</p>
+
+                <div className="order-receipt-meta">
+                  <span>₹{Number(o.totalAmount).toFixed(2)}</span>
+                  {o.scheduledSlotLabel && (
+                    <span className="order-slot-tag">⏰ {o.scheduledSlotLabel}</span>
+                  )}
+                  {o.tableNumber && <span className="table-dinein-pill">Table #{o.tableNumber}</span>}
+                </div>
+
+                {o.status === "COLLECTED" && (
+                  <div className="rate-nudge">★ Rate your meal →</div>
+                )}
+              </article>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }

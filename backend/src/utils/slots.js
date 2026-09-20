@@ -160,6 +160,12 @@ function isOrderInCookingWindow(slotKey, dateStr) {
   return currentMinutes >= slotStartMinutes - PREP_WINDOW_MINUTES;
 }
 
+const ALL_VALID_SLOT_KEYS = new Set(generateAllDaySlots().map((s) => s.slot));
+
+function isValidSlot(slotKey) {
+  return typeof slotKey === "string" && ALL_VALID_SLOT_KEYS.has(slotKey.trim());
+}
+
 module.exports = {
   MAX_SLOT_CAPACITY,
   PREP_WINDOW_MINUTES,
@@ -168,4 +174,6 @@ module.exports = {
   formatSlotLabel,
   getAvailableSlots,
   isOrderInCookingWindow,
+  isValidSlot,
 };
+

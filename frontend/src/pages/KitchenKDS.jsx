@@ -145,6 +145,10 @@ export default function KitchenKDS() {
             <span className="kds-dot ready" />
             <span>Ready: <strong>{data.counts?.ready || 0}</strong></span>
           </div>
+          <div className="kds-metric-pill">
+            <span style={{ fontSize: "0.9rem" }}>⏰</span>
+            <span>Scheduled: <strong>{data.counts?.scheduled || 0}</strong></span>
+          </div>
           <button
             className={`btn small ${audioEnabled ? "secondary" : ""}`}
             onClick={() => setAudioEnabled(!audioEnabled)}
@@ -169,6 +173,39 @@ export default function KitchenKDS() {
                 <span className="kds-batch-count">{b.count}x</span>
                 <span className="kds-batch-name">{b.name}</span>
                 <span className="kds-batch-station">{b.station}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Advance Planning for Upcoming Break Slots */}
+      {data.upcomingSlotsSummary?.length > 0 && (
+        <section className="kds-scheduled-advance-card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#0369a1" }}>
+              <span style={{ fontSize: "1.2rem" }}>⏰</span>
+              <strong style={{ fontSize: "0.95rem" }}>UPCOMING BREAK SLOTS (Advance Prep Notice):</strong>
+            </div>
+            <span style={{ fontSize: "0.78rem", background: "#0284c7", color: "#fff", padding: "2px 8px", borderRadius: "999px", fontWeight: 700 }}>
+              {data.counts?.scheduled || 0} upcoming pre-orders
+            </span>
+          </div>
+
+          <div className="kds-slots-chips">
+            {data.upcomingSlotsSummary.map((slotInfo) => (
+              <div key={slotInfo.slot} className="kds-slot-summary-box">
+                <div className="kds-slot-time">
+                  <strong>{slotInfo.label}</strong>
+                  <span className="kds-slot-orders-count">{slotInfo.orderCount} orders</span>
+                </div>
+                <div className="kds-slot-items-list">
+                  {Object.entries(slotInfo.items).map(([name, count]) => (
+                    <span key={name} className="kds-slot-item-chip">
+                      <strong>{count}x</strong> {name}
+                    </span>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
@@ -209,6 +246,9 @@ export default function KitchenKDS() {
                   <div>
                     <div className="kds-card-token">{order.token}</div>
                     <div className="kds-card-cust">Customer: {order.customer?.name || "Student"}</div>
+                    <div className={`kds-table-badge ${order.tableNumber ? "dinein" : "takeaway"}`}>
+                      {order.tableNumber ? `Table #${order.tableNumber}` : "Takeaway / Counter"}
+                    </div>
                   </div>
                   <div className={`kds-timer ${timerClass}`}>
                     ⏱️ {formatElapsed(order.createdAt)}

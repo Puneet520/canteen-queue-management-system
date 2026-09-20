@@ -28,6 +28,8 @@ const listOrders = asyncHandler(async (req, res) => {
   res.json({ orders: withPositions });
 });
 
+const { isOrderInCookingWindow, formatSlotLabel } = require("../utils/slots");
+
 // GET /api/admin/kitchen — dedicated Kitchen Display System (KDS) data with batch cooking summary
 const getKitchenKDS = asyncHandler(async (req, res) => {
   const activeOrders = await prisma.order.findMany({
@@ -46,13 +48,21 @@ const getKitchenKDS = asyncHandler(async (req, res) => {
     }))
   );
 
-  // Compute live batch cooking summary across all PENDING and PREPARING orders
+  // Partition into currently active cooking orders vs future scheduled orders
+  const activeCookingOrders = withPositions.filter(
+    (o) => !o.scheduledSlot || isOrderInCookingWindow(o.scheduledSlot, o.scheduledDate)
+  );
+  const upcomingScheduledOrders = withPositions.filter(
+    (o) => o.scheduledSlot && !isOrderInCookingWindow(o.scheduledSlot, o.scheduledDate)
+  );
+
+  // Compute live batch cooking summary across active PENDING and PREPARING orders
   const batchMap = {};
-  for (const o of activeOrders) {
+  for (const o of activeCookingOrders) {
     if (o.status === "PENDING" || o.status === "PREPARING") {
       for (const itm of o.items) {
-        const name = itm.menuItem?.name || "Item";
-        const station = itm.menuItem?.station || "Main";
+        const name = itm.name || itm.menuItem?.name || "Item";
+        const station = itm.station || itm.menuItem?.station || "Main";
         if (!batchMap[name]) {
           batchMap[name] = { count: 0, station, name };
         }
@@ -63,13 +73,36 @@ const getKitchenKDS = asyncHandler(async (req, res) => {
 
   const batchSummary = Object.values(batchMap).sort((a, b) => b.count - a.count);
 
+  // Advance planning summary for upcoming scheduled break slots
+  const upcomingSlotsMap = {};
+  for (const o of upcomingScheduledOrders) {
+    const slot = o.scheduledSlot;
+    if (!upcomingSlotsMap[slot]) {
+      upcomingSlotsMap[slot] = {
+        slot,
+        label: o.scheduledSlotLabel || formatSlotLabel(slot),
+        orderCount: 0,
+        items: {},
+      };
+    }
+    upcomingSlotsMap[slot].orderCount += 1;
+    for (const itm of o.items) {
+      const name = itm.name || itm.menuItem?.name || "Item";
+      upcomingSlotsMap[slot].items[name] = (upcomingSlotsMap[slot].items[name] || 0) + itm.quantity;
+    }
+  }
+  const upcomingSlotsSummary = Object.values(upcomingSlotsMap).sort((a, b) => a.slot.localeCompare(b.slot));
+
   res.json({
-    orders: withPositions,
+    orders: activeCookingOrders,
+    upcomingScheduledOrders,
+    upcomingSlotsSummary,
     batchSummary,
     counts: {
-      pending: activeOrders.filter((o) => o.status === "PENDING").length,
-      preparing: activeOrders.filter((o) => o.status === "PREPARING").length,
-      ready: activeOrders.filter((o) => o.status === "READY").length,
+      pending: activeCookingOrders.filter((o) => o.status === "PENDING").length,
+      preparing: activeCookingOrders.filter((o) => o.status === "PREPARING").length,
+      ready: activeCookingOrders.filter((o) => o.status === "READY").length,
+      scheduled: upcomingScheduledOrders.length,
     },
   });
 });

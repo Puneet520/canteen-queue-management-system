@@ -74,8 +74,32 @@ export default function OrderStatus() {
     return () => socket.off("order:update", handleUpdate);
   }, [id, user]);
 
-  if (error) return <div className="page error-text">{error}</div>;
-  if (!order) return <div className="page">Loading order details...</div>;
+  if (error) {
+    return (
+      <div className="page order-status-page order-status-state-page">
+        <div className="order-state-card order-state-error" role="alert">
+          <span className="order-state-icon" aria-hidden="true">!</span>
+          <span className="order-status-eyebrow">ORDER UNAVAILABLE</span>
+          <h1>We couldn&apos;t load this order</h1>
+          <p>{error}</p>
+          <Link to="/orders" className="btn secondary small">Back to my orders</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div className="page order-status-page order-status-state-page" aria-busy="true">
+        <div className="order-state-card order-state-loading">
+          <span className="order-loading-spinner" aria-hidden="true" />
+          <span className="order-status-eyebrow">ORDER DETAILS</span>
+          <h1>Loading your order</h1>
+          <p>We&apos;re getting the latest kitchen update.</p>
+        </div>
+      </div>
+    );
+  }
 
   const isActive = order.status === "PENDING" || order.status === "PREPARING";
   const isReady = order.status === "READY";
@@ -98,141 +122,203 @@ export default function OrderStatus() {
     return "upcoming";
   }
 
+  const statusContent = {
+    PENDING: {
+      eyebrow: "ORDER RECEIVED",
+      title: "Order placed",
+      description: "Your order is in line and will move to the kitchen shortly.",
+    },
+    PREPARING: {
+      eyebrow: "IN THE KITCHEN",
+      title: "Your order is being prepared",
+      description: "The kitchen is working on your food now.",
+    },
+    READY: {
+      eyebrow: "READY FOR PICKUP",
+      title: "Your order is ready!",
+      description: "Show your pickup PIN at the canteen counter.",
+    },
+    COLLECTED: {
+      eyebrow: "ORDER COMPLETE",
+      title: "Order collected",
+      description: "Enjoy your fresh meal. Thanks for ordering with us.",
+    },
+    CANCELLED: {
+      eyebrow: "ORDER CLOSED",
+      title: "Order cancelled",
+      description: "This order is no longer active.",
+    },
+  };
+
+  const currentStatus = statusContent[order.status] || {
+    eyebrow: "ORDER STATUS",
+    title: order.status,
+    description: "We are keeping your order details up to date.",
+  };
+
   return (
-    <div className="page" style={{ maxWidth: 680 }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <div>
-          <span className="muted" style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px" }}>
-            Order Token
-          </span>
-          <h1 style={{ margin: "2px 0 0", fontSize: "2.4rem" }}>{order.token}</h1>
-        </div>
-        <span className={`badge ${order.status}`} style={{ fontSize: "0.9rem", padding: "6px 14px" }}>
-          {order.status}
-        </span>
-      </div>
-
-      {/* Progress Stepper */}
-      <div className="stepper-container">
-        {steps.map((step) => {
-          const status = getStepStatus(step.key);
-          return (
-            <div key={step.key} className={`stepper-step ${status}`}>
-              <div className="stepper-circle">{step.icon}</div>
-              <div className="stepper-label">{step.label}</div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* READY FOR PICKUP PIN BANNER (Prominent) */}
-      {isReady && (
-        <div className="pickup-pin-hero">
-          <div className="pickup-pin-eyebrow">🎉 ORDER IS READY AT COUNTER 1</div>
-          <div className="pickup-pin-label">Show this 4-Digit PIN to collect your food:</div>
-          <div className="pickup-pin-code">{order.pickupPin}</div>
-          <p className="pickup-pin-sub">The counter chef will verify your PIN before handing over the tray.</p>
-        </div>
-      )}
-
-      {/* Scheduled Break Slot Banner (if scheduled and before cooking window) */}
-      {order.isScheduled && !order.isInCookingWindow && order.status === "PENDING" && (
-        <div className="card" style={{ background: "#f0f9ff", borderColor: "#bae6fd", padding: "24px 20px", textAlign: "center", marginTop: 20 }}>
-          <span style={{ fontSize: "2.4rem", display: "block", marginBottom: 6 }}>⏰</span>
-          <span className="badge PREPARING" style={{ fontSize: "0.8rem", padding: "4px 12px", marginBottom: 8 }}>
-            SCHEDULED PRE-ORDER
-          </span>
-          <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "var(--navy)", margin: "8px 0" }}>
-            Pickup Window: {order.scheduledSlotLabel || order.scheduledSlot}
-          </div>
-          <p className="muted" style={{ margin: "6px auto 0", maxWidth: 480, fontSize: "0.88rem", lineHeight: 1.5 }}>
-            Your meal is booked! The kitchen will begin cooking approximately 12 minutes before your slot starts so it's fresh and piping hot right as you arrive.
-          </p>
-        </div>
-      )}
-
-      {/* Active Queue Position Banner (immediate orders or scheduled orders now cooking) */}
-      {isActive && (!order.isScheduled || order.isInCookingWindow) && order.queuePosition && (
-        <div className="queue-banner" style={{ marginTop: 20 }}>
-          <div className="muted">Your position in the live queue</div>
-          <div className="position">#{order.queuePosition}</div>
-          <div className="muted" style={{ fontWeight: 600, marginTop: 4 }}>
-            Estimated wait time: ~{order.estimatedWaitMinutes} min
-          </div>
-          <div style={{ fontSize: "0.85rem", color: "#6b6a64", marginTop: 8 }}>
-            (Calculated using real-time item cooking times & queue speed)
-          </div>
-        </div>
-      )}
-
-      {/* Cancel button if pending */}
-      {order.status === "PENDING" && (
-        <div style={{ marginTop: 16, textAlign: "center" }}>
-          <button
-            onClick={handleCancel}
-            disabled={cancelling}
-            className="btn danger small"
-          >
-            {cancelling ? "Cancelling..." : "Cancel Order"}
-          </button>
-        </div>
-      )}
-
-      {/* Collected confirmation */}
-      {isCollected && (
-        <div className="card" style={{ background: "#e8f5e9", borderColor: "#a5d6a7", textAlign: "center", padding: "24px" }}>
-          <span style={{ fontSize: "2.4rem" }}>🎉</span>
-          <h2 style={{ color: "#2e7d32", margin: "8px 0 4px" }}>Order Collected</h2>
-          <p className="muted" style={{ margin: 0 }}>Enjoy your fresh meal! Thank you for using Canteen Queue.</p>
-        </div>
-      )}
-
-      {/* Rate your meal (verified purchase) */}
-      {isCollected && (
-        <RateItemsCard order={order} onItemReviewed={markItemReviewed} />
-      )}
-
-      {/* Order Items Summary */}
-      <div className="card" style={{ marginTop: 20 }}>
-        <h2>Order Items</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Dish</th>
-              <th style={{ textAlign: "center" }}>Qty</th>
-              <th style={{ textAlign: "right" }}>Price</th>
-            </tr>
-          </thead>
-          <tbody>
-            {order.items.map((line, idx) => (
-              <tr key={idx}>
-                <td>
-                  <strong>{line.name}</strong>
-                  {line.station && <span className="muted" style={{ fontSize: "0.8rem", marginLeft: 8 }}>({line.station})</span>}
-                </td>
-                <td style={{ textAlign: "center" }}>x{line.quantity}</td>
-                <td style={{ textAlign: "right" }}>
-                  ₹{(Number(line.unitPrice) * line.quantity).toFixed(2)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "2px dashed var(--border)" }}>
-          <span style={{ fontSize: "1.1rem" }}>Total Amount (Pay at Counter):</span>
-          <strong style={{ fontSize: "1.3rem", color: "var(--navy)" }}>
-            ₹{Number(order.totalAmount).toFixed(2)}
-          </strong>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        <Link to="/orders" className="muted">
-          ← Back to my orders
+    <div className="page order-status-page">
+      <header className="order-status-header">
+        <Link to="/orders" className="order-back-link">
+          <span aria-hidden="true">←</span> My Orders
         </Link>
-      </div>
+        <div className="order-header-id">
+          <span>Order</span>
+          <strong>#{order.token}</strong>
+        </div>
+      </header>
+
+      <main>
+        <section className={`order-status-hero status-${order.status}`} aria-live="polite">
+          <div className="order-status-hero-copy">
+            <span className="order-status-eyebrow">{currentStatus.eyebrow}</span>
+            <h1>{currentStatus.title}</h1>
+            <p>{currentStatus.description}</p>
+          </div>
+          <span className={`order-status-badge badge ${order.status}`}>
+            <span className="order-status-badge-dot" aria-hidden="true" />
+            {order.status}
+          </span>
+        </section>
+
+        <section className="order-status-overview" aria-label="Order queue overview">
+          <div className="order-token-block">
+            <span className="order-section-label">PICKUP TOKEN</span>
+            <strong className="order-token">{order.token}</strong>
+            <span className="order-token-hint">Keep this handy at the counter</span>
+          </div>
+
+          {isActive && (!order.isScheduled || order.isInCookingWindow) && order.queuePosition && (
+            <div className="order-metric">
+              <span className="order-section-label">QUEUE POSITION</span>
+              <strong>#{order.queuePosition}</strong>
+              <span>in the live queue</span>
+            </div>
+          )}
+
+          {isActive && (!order.isScheduled || order.isInCookingWindow) && order.estimatedWaitMinutes !== null && order.estimatedWaitMinutes !== undefined && (
+            <div className="order-metric">
+              <span className="order-section-label">ESTIMATED WAIT</span>
+              <strong>~{order.estimatedWaitMinutes} min</strong>
+              <span>based on kitchen pace</span>
+            </div>
+          )}
+        </section>
+
+        <section className="order-progress-panel" aria-labelledby="progress-heading">
+          <div className="order-panel-heading">
+            <div>
+              <span className="order-section-label">LIVE UPDATES</span>
+              <h2 id="progress-heading">Your order journey</h2>
+            </div>
+            <span className="order-progress-caption">Updates automatically</span>
+          </div>
+
+          <div className="order-progress" role="list">
+            {steps.map((step, index) => {
+              const status = getStepStatus(step.key);
+              return (
+                <div key={step.key} className={`order-progress-step ${status}`} role="listitem">
+                  <div className="order-progress-marker">
+                    <span aria-hidden="true">{status === "completed" ? "✓" : step.icon}</span>
+                  </div>
+                  {index < steps.length - 1 && <span className="order-progress-line" aria-hidden="true" />}
+                  <span className="order-progress-label">{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {isReady && (
+          <section className="order-pickup-card" aria-labelledby="pickup-heading">
+            <div className="order-pickup-icon" aria-hidden="true">✓</div>
+            <div className="order-pickup-copy">
+              <span className="order-status-eyebrow">READY FOR PICKUP</span>
+              <h2 id="pickup-heading">Show this PIN at the counter</h2>
+              <p>The counter chef will verify it before handing over your order.</p>
+            </div>
+            <div className="order-pickup-pin" aria-label={`Pickup PIN ${order.pickupPin}`}>
+              {order.pickupPin}
+            </div>
+          </section>
+        )}
+
+        {order.isScheduled && !order.isInCookingWindow && order.status === "PENDING" && (
+          <section className="order-schedule-card" aria-label="Scheduled pickup">
+            <div className="order-schedule-icon" aria-hidden="true">⏰</div>
+            <div>
+              <span className="order-section-label">SCHEDULED PRE-ORDER</span>
+              <h2>Pickup window: {order.scheduledSlotLabel || order.scheduledSlot}</h2>
+              <p>The kitchen will begin preparing your meal shortly before this window.</p>
+            </div>
+          </section>
+        )}
+
+        {isCollected && (
+          <section className="order-collected-card" aria-live="polite">
+            <div className="order-collected-icon" aria-hidden="true">✓</div>
+            <div>
+              <span className="order-status-eyebrow">ORDER COMPLETE</span>
+              <h2>Enjoy your meal!</h2>
+              <p>Your order was collected successfully. Thanks for using Canteen Queue.</p>
+            </div>
+          </section>
+        )}
+
+        {isCollected && (
+          <RateItemsCard order={order} onItemReviewed={markItemReviewed} />
+        )}
+
+        <section className="order-items-card" aria-labelledby="items-heading">
+          <div className="order-panel-heading">
+            <div>
+              <span className="order-section-label">ORDER SUMMARY</span>
+              <h2 id="items-heading">What you ordered</h2>
+            </div>
+            <span className="order-item-count">{order.items.length} {order.items.length === 1 ? "item" : "items"}</span>
+          </div>
+
+          <ul className="order-item-list">
+            {order.items.map((line, idx) => (
+              <li key={idx} className="order-item-row">
+                <div className="order-item-info">
+                  <strong>{line.name}</strong>
+                  <span>{line.station || "Canteen kitchen"}</span>
+                </div>
+                <span className="order-item-quantity">×{line.quantity}</span>
+                <strong className="order-item-price">
+                  ₹{(Number(line.unitPrice) * line.quantity).toFixed(2)}
+                </strong>
+              </li>
+            ))}
+          </ul>
+
+          <div className="order-summary-total">
+            <span>Total amount</span>
+            <strong>₹{Number(order.totalAmount).toFixed(2)}</strong>
+          </div>
+
+          {order.isScheduled && (
+            <div className="order-summary-schedule">
+              <span aria-hidden="true">⏰</span>
+              <span>Pickup window: <strong>{order.scheduledSlotLabel || order.scheduledSlot}</strong></span>
+            </div>
+          )}
+        </section>
+
+        {order.status === "PENDING" && (
+          <div className="order-cancel-area">
+            <button onClick={handleCancel} disabled={cancelling} className="btn danger small">
+              {cancelling ? "Cancelling..." : "Cancel order"}
+            </button>
+          </div>
+        )}
+
+        <Link to="/orders" className="order-bottom-link">
+          <span aria-hidden="true">←</span> Back to my orders
+        </Link>
+      </main>
     </div>
   );
 }

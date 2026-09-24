@@ -50,6 +50,7 @@ model Order {
   userId           String
   status           OrderStatus @default(PENDING)
   totalAmount      Decimal     @db.Decimal(10, 2)
+  paymentExpiresAt DateTime?
   queuePosition    Int?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
@@ -63,8 +64,29 @@ model Order {
   tableNumber      String?
   user             User        @relation(fields: [userId], references: [id])
   items            OrderItem[]
+  paymentAttempts  Payment[]
   reviews          Review[]
 
+  @@index([status, createdAt])
+  @@index([status, paymentExpiresAt])
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  orderId           String
+  order             Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status            PaymentStatus @default(CREATED)
+  razorpayOrderId   String        @unique
+  razorpayPaymentId String?       @unique
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("INR")
+  method            String?
+  paidAt            DateTime?
+  failureReason     String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([orderId, createdAt])
   @@index([status, createdAt])
 }
 
@@ -101,6 +123,7 @@ enum Role {
 }
 
 enum OrderStatus {
+  PENDING_PAYMENT
   PENDING
   PREPARING
   READY
@@ -112,4 +135,14 @@ enum FoodType {
   VEG
   NON_VEG
   EGG
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  EXPIRED
+  REFUND_REQUIRED
+  REFUNDED
 }

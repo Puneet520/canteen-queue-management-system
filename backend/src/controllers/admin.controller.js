@@ -14,7 +14,11 @@ const NEXT_STATUS = {
 const listOrders = asyncHandler(async (req, res) => {
   const orders = await prisma.order.findMany({
     orderBy: { createdAt: "desc" },
-    include: { items: { include: { menuItem: true } }, user: { select: { name: true, email: true } } },
+    include: {
+      items: { include: { menuItem: true } },
+      paymentAttempts: { orderBy: { createdAt: "desc" }, take: 1 },
+      user: { select: { name: true, email: true } },
+    },
     take: 100,
   });
 
@@ -37,6 +41,7 @@ const getKitchenKDS = asyncHandler(async (req, res) => {
     orderBy: { createdAt: "asc" },
     include: {
       items: { include: { menuItem: true } },
+      paymentAttempts: { orderBy: { createdAt: "desc" }, take: 1 },
       user: { select: { name: true, email: true } },
     },
   });
@@ -119,6 +124,9 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   const targetStatus = status || NEXT_STATUS[existing.status];
   if (!targetStatus) {
     return res.status(400).json({ error: `Order is already ${existing.status}` });
+  }
+  if (existing.status === "PENDING_PAYMENT") {
+    return res.status(409).json({ error: "Payment is required before changing this order" });
   }
 
   const updateData = { status: targetStatus };

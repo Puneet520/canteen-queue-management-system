@@ -32,6 +32,7 @@ function serializeOrder(order, position, reviewedItemIds) {
     token: order.token,
     pickupPin: order.pickupPin,
     status: order.status,
+    paymentStatus: order.paymentAttempts?.[0]?.status || null,
     totalAmount: order.totalAmount,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
@@ -206,6 +207,7 @@ const createOrder = asyncHandler(async (req, res) => {
             menuItem: true,
           },
         },
+        paymentAttempts: { orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
 
@@ -266,7 +268,10 @@ const getMyOrders = asyncHandler(async (req, res) => {
   const orders = await prisma.order.findMany({
     where: { userId: req.user.id },
     orderBy: { createdAt: "desc" },
-    include: { items: { include: { menuItem: true } } },
+    include: {
+      items: { include: { menuItem: true } },
+      paymentAttempts: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
     take: 20,
   });
 
@@ -281,7 +286,10 @@ const getMyOrders = asyncHandler(async (req, res) => {
 const getOrder = asyncHandler(async (req, res) => {
   const order = await prisma.order.findUnique({
     where: { id: req.params.id },
-    include: { items: { include: { menuItem: true } } },
+    include: {
+      items: { include: { menuItem: true } },
+      paymentAttempts: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
   });
 
   if (!order) return res.status(404).json({ error: "Order not found" });
@@ -312,6 +320,7 @@ const cancelOrder = asyncHandler(async (req, res) => {
     where: { id: req.params.id },
     include: {
       items: true,
+      paymentAttempts: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
 
@@ -325,36 +334,69 @@ const cancelOrder = asyncHandler(async (req, res) => {
   }
 
   // Once preparation has started, cancellation is no longer allowed.
-  if (order.status !== "PENDING") {
+  if (order.status !== "PENDING" && order.status !== "PENDING_PAYMENT") {
     return res.status(409).json({
       error: "Order can only be cancelled while it is pending",
     });
   }
 
+  let stockRestored = false;
   const cancelledOrder = await prisma.$transaction(async (tx) => {
-    // Restore each item's stock.
-    for (const item of order.items) {
-      await tx.menuItem.update({
-        where: { id: item.menuItemId },
-        data: {
-          stockQty: { increment: item.quantity },
-          isAvailable: true,
-        },
-      });
+    const currentOrder = await tx.order.findUnique({
+      where: { id: order.id },
+      include: { items: true, paymentAttempts: true },
+    });
+    if (!currentOrder) {
+      throw Object.assign(new Error("Order not found"), { status: 404 });
     }
 
-    // Mark the order as cancelled.
-    return tx.order.update({
-      where: { id: order.id },
-      data: {
-        status: "CANCELLED",
+    const capturedPayment = currentOrder.paymentAttempts.find((payment) => payment.status === "CAPTURED");
+    const shouldRestoreStock = !capturedPayment;
+    const cancelled = await tx.order.updateMany({
+      where: {
+        id: order.id,
+        status: { in: ["PENDING", "PENDING_PAYMENT"] },
       },
+      data: { status: "CANCELLED", paymentExpiresAt: null, queuePosition: null, estimatedMinutes: 0 },
+    });
+    if (cancelled.count !== 1) {
+      throw Object.assign(new Error("Order can no longer be cancelled"), { status: 409 });
+    }
+
+    if (shouldRestoreStock) {
+      stockRestored = true;
+      // Restore each item's stock only for an unpaid reservation or legacy unpaid order.
+      for (const item of currentOrder.items) {
+        await tx.menuItem.update({
+          where: { id: item.menuItemId },
+          data: {
+            stockQty: { increment: item.quantity },
+            isAvailable: true,
+          },
+        });
+      }
+    }
+
+    if (capturedPayment) {
+      await tx.payment.updateMany({
+        where: { id: capturedPayment.id, status: "CAPTURED" },
+        data: { status: "REFUND_REQUIRED", failureReason: "Order cancelled after payment capture" },
+      });
+    } else {
+      await tx.payment.updateMany({
+        where: { orderId: order.id, status: { in: ["CREATED", "AUTHORIZED"] } },
+        data: { status: "FAILED", failureReason: "Order cancelled" },
+      });
+    }
+    return tx.order.findUnique({
+      where: { id: order.id },
       include: {
         items: {
           include: {
             menuItem: true,
           },
         },
+        paymentAttempts: { orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
   });
@@ -371,12 +413,14 @@ const cancelOrder = asyncHandler(async (req, res) => {
   });
 
   // Tell all connected clients that menu stock has changed.
-  const updatedMenuItems = await prisma.menuItem.findMany({
-    orderBy: { name: "asc" },
-  });
+  if (stockRestored) {
+    const updatedMenuItems = await prisma.menuItem.findMany({
+      orderBy: { name: "asc" },
+    });
 
-  emitMenuStockChanged(updatedMenuItems);
-  emitCrowdUpdated(await getCrowdStatus(prisma));
+    emitMenuStockChanged(updatedMenuItems);
+    emitCrowdUpdated(await getCrowdStatus(prisma));
+  }
 
   res.json({ order: serialized });
 });

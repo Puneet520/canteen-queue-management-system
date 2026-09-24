@@ -11,12 +11,15 @@ const menuRoutes = require("./routes/menu.routes");
 const orderRoutes = require("./routes/order.routes");
 const adminRoutes = require("./routes/admin.routes");
 const reviewRoutes = require("./routes/review.routes");
+const paymentRoutes = require("./routes/payment.routes");
+const { expirePendingPayments } = require("./services/payment.service");
 
 const app = express();
 const server = http.createServer(app);
 
 const clientOrigin = process.env.CLIENT_ORIGIN || "http://localhost:5173";
 app.use(cors({ origin: clientOrigin, credentials: true }));
+app.use("/api/payments", paymentRoutes);
 app.use(express.json());
 
 app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
@@ -31,6 +34,11 @@ app.use((req, res) => res.status(404).json({ error: "Route not found" }));
 app.use(errorHandler);
 
 initSockets(server, clientOrigin);
+
+const paymentExpiryTimer = setInterval(() => {
+  expirePendingPayments().catch((error) => console.error("Payment expiry failed", error));
+}, 60 * 1000);
+paymentExpiryTimer.unref();
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

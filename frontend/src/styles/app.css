@@ -3461,6 +3461,20 @@ body {
   color: var(--navy);
 }
 
+.payment-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.payment-status-warning {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border: 1px solid #f0d49b;
+}
+
 .checkout-timing-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;

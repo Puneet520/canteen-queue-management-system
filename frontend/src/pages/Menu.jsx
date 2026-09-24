@@ -7,6 +7,7 @@ import VegBadge from "../components/VegBadge";
 import StarRating from "../components/StarRating";
 import ItemDetailModal from "../components/ItemDetailModal";
 import CrowdMeter from "../components/CrowdMeter";
+import { loadRazorpayScript } from "../utils/razorpay";
 
 const CATEGORY_ICONS = {
   Meals: "🍛",
@@ -80,6 +81,8 @@ export default function Menu() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [placing, setPlacing] = useState(false);
+  const [paymentOrder, setPaymentOrder] = useState(null);
+  const [paymentMessage, setPaymentMessage] = useState("");
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [dietFilter, setDietFilter] = useState("All"); // All | Veg | Non-veg | Jain
@@ -227,64 +230,136 @@ export default function Menu() {
 
   const modalItem = items.find((i) => i.id === selectedItemId) || null;
 
+  async function refreshMenuStock() {
+    try {
+      const { data } = await client.get("/menu");
+
+      setItems(data.items);
+      setCart((currentCart) => {
+        const nextCart = { ...currentCart };
+
+        for (const [menuItemId, quantity] of Object.entries(currentCart)) {
+          const item = data.items.find((i) => i.id === menuItemId);
+
+          if (!item || !item.isAvailable || item.stockQty === 0) {
+            delete nextCart[menuItemId];
+          } else if (quantity > item.stockQty) {
+            nextCart[menuItemId] = item.stockQty;
+          }
+        }
+
+        return nextCart;
+      });
+    } catch {
+      // Keep the original order error visible.
+    }
+  }
+
   async function confirmPlaceOrder() {
+    if (placing || cartLines.length === 0) return;
+
     setError("");
+    setPaymentMessage("");
     setPlacing(true);
 
     try {
-      const payload = {
-        items: cartLines.map(({ item, quantity }) => ({
-          menuItemId: item.id,
-          quantity,
-        })),
-        scheduledSlot: orderTiming === "scheduled" ? selectedSlot : null,
-        tableNumber: tableNumber || null,
-      };
+      let checkoutOrder = paymentOrder;
 
-      const { data } = await client.post("/orders", payload);
+      if (!checkoutOrder) {
+        const payload = {
+          items: cartLines.map(({ item, quantity }) => ({
+            menuItemId: item.id,
+            quantity,
+          })),
+          scheduledSlot: orderTiming === "scheduled" ? selectedSlot : null,
+          tableNumber: tableNumber || null,
+        };
 
-      setShowCheckoutModal(false);
-      navigate(`/orders/${data.order.id}`);
+        const { data } = await client.post("/orders", payload);
+        checkoutOrder = data;
+        setPaymentOrder(data);
+      }
+
+      await loadRazorpayScript();
+
+      const razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || checkoutOrder.payment.keyId;
+      if (!razorpayKeyId) {
+        throw new Error("Razorpay public key is not configured");
+      }
+
+      await new Promise((resolve, reject) => {
+        let completed = false;
+        const finish = (callback) => {
+          if (completed) return;
+          completed = true;
+          callback();
+        };
+
+        const razorpay = new window.Razorpay({
+          key: razorpayKeyId,
+          amount: checkoutOrder.payment.amount,
+          currency: checkoutOrder.payment.currency,
+          name: "Canteen Queue",
+          description: "Canteen order payment",
+          order_id: checkoutOrder.payment.razorpayOrderId,
+          prefill: {
+            name: user?.name || "",
+            email: user?.email || "",
+          },
+          theme: { color: "#0f6e56" },
+          handler: async (response) => {
+            try {
+              const { data } = await client.post(
+                `/orders/${checkoutOrder.order.id}/payment/verify`,
+                {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }
+              );
+
+              setCart({});
+              setPaymentOrder(null);
+              setShowCheckoutModal(false);
+              finish(() => {
+                resolve(data.order);
+                navigate(`/orders/${data.order.id}`);
+              });
+            } catch (err) {
+              if ([404, 409].includes(err.response?.status)) {
+                setPaymentOrder(null);
+              }
+              finish(() => reject(err));
+            }
+          },
+          modal: {
+            ondismiss: () => {
+              setPaymentMessage("Payment was cancelled. Your cart is still saved.");
+              finish(resolve);
+            },
+          },
+        });
+
+        razorpay.on("payment.failed", () => {
+          setPaymentMessage("Payment failed. Your cart is still saved. You can try again.");
+          finish(resolve);
+        });
+
+        razorpay.open();
+      });
     } catch (err) {
       const message =
-        err.response?.data?.error || "Could not place order";
+        err.response?.data?.error || err.message || "Could not start payment";
 
-      setError(message);
-      setShowCheckoutModal(false);
+      if (err.response?.status === 404 || err.response?.status === 409) {
+        setPaymentMessage(message);
+      } else {
+        setError(message);
+      }
 
       // Refresh menu stock because another student may have
       // purchased an item while it was in this student's cart.
-      try {
-        const { data } = await client.get("/menu");
-
-        setItems(data.items);
-
-        setCart((currentCart) => {
-          const nextCart = { ...currentCart };
-
-          for (const [menuItemId, quantity] of Object.entries(
-            currentCart
-          )) {
-            const item = data.items.find(
-              (i) => i.id === menuItemId
-            );
-
-            if (
-              !item ||
-              !item.isAvailable ||
-              item.stockQty === 0
-            ) {
-              delete nextCart[menuItemId];
-            } else if (quantity > item.stockQty) {
-              nextCart[menuItemId] = item.stockQty;
-            }
-          }
-
-          return nextCart;
-        });
-      } catch {
-        // Keep the original order error visible.
-      }
+      await refreshMenuStock();
     } finally {
       setPlacing(false);
     }
@@ -542,7 +617,7 @@ export default function Menu() {
               </strong>
 
               <span>
-                ₹{total.toFixed(2)} · Pay at counter
+                ₹{total.toFixed(2)} · Secure online payment
               </span>
             </div>
           </div>
@@ -559,19 +634,25 @@ export default function Menu() {
 
       {/* Checkout & Break Slot Scheduling Modal */}
       {showCheckoutModal && (
-        <div className="modal-backdrop" onClick={() => setShowCheckoutModal(false)}>
+        <div className="modal-backdrop" onClick={() => !placing && setShowCheckoutModal(false)}>
           <div className="modal-card checkout-modal" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: "1.4rem", color: "var(--navy)" }}>Review & Schedule Order</h2>
+              <h2 style={{ margin: 0, fontSize: "1.4rem", color: "var(--navy)" }}>Review & Pay</h2>
               <button
                 className="menu-search-clear"
-                onClick={() => setShowCheckoutModal(false)}
+                onClick={() => !placing && setShowCheckoutModal(false)}
                 style={{ position: "static", transform: "none" }}
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
+
+            {paymentMessage && (
+              <div className="payment-status payment-status-warning" role="status">
+                {paymentMessage}
+              </div>
+            )}
 
             {/* Cart Items Summary */}
             <div className="checkout-summary-box">
@@ -681,7 +762,7 @@ export default function Menu() {
                 type="button"
                 className="btn secondary"
                 style={{ flex: 1 }}
-                onClick={() => setShowCheckoutModal(false)}
+                onClick={() => !placing && setShowCheckoutModal(false)}
                 disabled={placing}
               >
                 Cancel
@@ -694,7 +775,7 @@ export default function Menu() {
                 onClick={confirmPlaceOrder}
                 disabled={placing || (orderTiming === "scheduled" && (!selectedSlot || availableSlots.length === 0))}
               >
-                {placing ? "Placing Order..." : `Confirm & Order (₹${total.toFixed(2)}) →`}
+                {placing ? "Preparing secure payment..." : `Pay ₹${total.toFixed(2)} securely →`}
               </button>
             </div>
           </div>
